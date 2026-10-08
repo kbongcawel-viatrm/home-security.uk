@@ -45,12 +45,6 @@
       letter-spacing: -0.5px;
     }
 
-    header p {
-      color: #b3b3b3;
-      font-size: 14px;
-      margin-top: 4px;
-    }
-
     /* Navigation */
     nav {
       background: var(--primary-black);
@@ -81,35 +75,57 @@
     }
 
     /* Hero Section */
-    .hero {
-      text-align: center;
-      margin-bottom: 60px;
+    .logo-slider {
+      overflow: hidden;
+      margin: 0 auto 60px;
+      padding: 20px 0;
+      background: white;
+      border: 1px solid var(--border-gray);
+      border-radius: 8px;
+      mask-image: linear-gradient(to right, transparent, black 8%, black 92%, transparent);
     }
 
-    .hero h2 {
-      font-size: 36px;
-      font-weight: 700;
-      margin-bottom: 16px;
-      color: var(--primary-black);
+    .logo-track {
+      display: flex;
+      width: max-content;
+      animation: slide-logos 45s linear infinite;
     }
 
-    .hero p {
-      font-size: 16px;
-      color: var(--text-secondary);
-      max-width: 600px;
-      margin: 0 auto 24px;
-      line-height: 1.6;
+    .logo-slider:hover .logo-track,
+    .logo-slider:focus-within .logo-track {
+      animation-play-state: paused;
     }
 
-    .hero-badge {
-      display: inline-block;
-      background: #e8f0ff;
-      color: var(--accent-blue);
-      padding: 8px 16px;
-      border-radius: 20px;
-      font-size: 13px;
+    .logo-group {
+      display: flex;
+      align-items: center;
+      gap: 48px;
+      padding: 0 24px;
+    }
+
+    .logo-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      min-width: 150px;
+      color: var(--medium-gray);
+      font-size: 15px;
       font-weight: 600;
-      margin-bottom: 20px;
+      white-space: nowrap;
+    }
+
+    .logo-item img {
+      width: 36px;
+      height: 36px;
+      object-fit: contain;
+    }
+
+    @keyframes slide-logos {
+      to { transform: translateX(-50%); }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .logo-track { animation: none; }
     }
 
     /* Services Grid */
@@ -244,10 +260,6 @@
         font-size: 22px;
       }
 
-      .hero h2 {
-        font-size: 28px;
-      }
-
       main {
         padding: 24px 16px;
       }
@@ -260,38 +272,68 @@
 </head>
 <body>
   <header>
-    <h1>🔐 Home Security Dashboard</h1>
-    <p>Cloudflare Zero Trust Network Access</p>
+    <h1>🏠🧱 Home Security Dashboard</h1>
   </header>
 
   <nav>
-    <a href="#overview">Overview</a>
+    <a href="#overview">Home</a>
     <a href="#services">Services</a>
-    <a href="#docs">Documentation</a>
+    <a href="#docs">Projects</a>
   </nav>
 
   <main>
-    <section class="hero">
-      <div class="hero-badge">🛡️ Secure Access Enabled</div>
-      <h2>Your Security Dashboard</h2>
-      <p>Access your home security infrastructure through Cloudflare Zero Trust. All services are protected by advanced security policies and authentication.</p>
+    <section class="logo-slider" aria-label="Technology logos">
+      <div class="logo-track">
+        <div class="logo-group">
+          <div class="logo-item"><img src="https://cdn.simpleicons.org/cloudflare" alt="">Cloudflare</div>
+          <div class="logo-item"><img src="https://cdn.simpleicons.org/ollama" alt="">Ollama</div>
+          <div class="logo-item"><img src="https://cdn.simpleicons.org/docker" alt="">Docker</div>
+          <div class="logo-item"><img src="https://cdn.simpleicons.org/amazonaws" alt="">AWS</div>
+          <div class="logo-item"><img src="https://cdn.simpleicons.org/suricata" alt="">Suricata</div>
+          <div class="logo-item"><img src="https://cdn.simpleicons.org/greenbone" alt="">OpenVAS</div>
+          <div class="logo-item"><img src="https://cdn.simpleicons.org/velociraptor" alt="">Velociraptor</div>
+          <div class="logo-item"><img src="https://cdn.simpleicons.org/crowdstrike" alt="">CrowdStrike</div>
+          <div class="logo-item"><img src="https://cdn.simpleicons.org/ansible" alt="">Ansible</div>
+          <div class="logo-item"><img src="https://cdn.simpleicons.org/windows" alt="">Windows OS</div>
+          <div class="logo-item"><img src="https://cdn.simpleicons.org/linux" alt="">Linux OS</div>
+          <div class="logo-item"><img src="https://cdn.simpleicons.org/caddy" alt="">Caddy</div>
+          <div class="logo-item"><img src="https://cdn.simpleicons.org/coredns" alt="">CoreDNS</div>
+          <div class="logo-item"><img src="https://cdn.simpleicons.org/fluentbit" alt="">Fluent Bit</div>
+        </div>
+        <div class="logo-group" aria-hidden="true">
+          <div class="logo-item"><img src="https://cdn.simpleicons.org/cloudflare" alt="">Cloudflare</div>
+          <div class="logo-item"><img src="https://cdn.simpleicons.org/ollama" alt="">Ollama</div>
+          <div class="logo-item"><img src="https://cdn.simpleicons.org/docker" alt="">Docker</div>
+          <div class="logo-item"><img src="https://cdn.simpleicons.org/amazonaws" alt="">AWS</div>
+          <div class="logo-item"><img src="https://cdn.simpleicons.org/suricata" alt="">Suricata</div>
+          <div class="logo-item"><img src="https://cdn.simpleicons.org/greenbone" alt="">OpenVAS</div>
+          <div class="logo-item"><img src="https://cdn.simpleicons.org/velociraptor" alt="">Velociraptor</div>
+          <div class="logo-item"><img src="https://cdn.simpleicons.org/crowdstrike" alt="">CrowdStrike</div>
+          <div class="logo-item"><img src="https://cdn.simpleicons.org/ansible" alt="">Ansible</div>
+          <div class="logo-item"><img src="https://cdn.simpleicons.org/windows" alt="">Windows OS</div>
+          <div class="logo-item"><img src="https://cdn.simpleicons.org/linux" alt="">Linux OS</div>
+          <div class="logo-item"><img src="https://cdn.simpleicons.org/caddy" alt="">Caddy</div>
+          <div class="logo-item"><img src="https://cdn.simpleicons.org/coredns" alt="">CoreDNS</div>
+          <div class="logo-item"><img src="https://cdn.simpleicons.org/fluentbit" alt="">Fluent Bit</div>
+        </div>
+      </div>
     </section>
 
     <section class="services-section" id="services">
-      <h3>Available Services</h3>
+      <h3>Services</h3>
       <div class="services-grid">
         <!-- SSO Service -->
         <a href="https://home-security-xyz.cloudflareaccess.com/cdn-cgi/access/sso/saml/970df012d694355281aba67c6f87ff96330ad6909167e8d73b0c91397273228f" class="service-card">
           <div class="service-icon">🔑</div>
-          <h4>SSO Portal</h4>
+          <h4>Cloudflare Zero Trust Network Access (ZTNA)</h4>
           <p>Single Sign-On authentication gateway for secure access management</p>
-          <span class="service-link">Open SSO Portal</span>
+          <span class="service-link">Login to your home network</span>
         </a>
 
         <!-- Agent Check Service -->
         <a href="agent-check.html" class="service-card">
           <div class="service-icon">✓</div>
-          <h4>Agent Check</h4>
+          <h4>Browser Agent Check</h4>
           <p>Monitor and verify the status of all security agents deployed across your network</p>
           <span class="service-link">Check Agents</span>
         </a>
@@ -300,10 +342,11 @@
     </section>
 
     <section class="services-section" id="docs">
-      <h3>Documentation</h3>
+      <h3>Projects</h3>
       <div class="services-grid">
         <a href="https://github.com/kbongcawel-viatrm/home-security.uk/blob/main/README.md" class="service-card">
           <div class="service-icon">📖</div>
+          <h4>home-security.uk</h4>
           <h4>Repository README</h4>
           <p>Read the project overview and setup documentation.</p>
           <span class="service-link">View README</span>
