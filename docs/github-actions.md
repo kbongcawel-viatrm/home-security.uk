@@ -4,7 +4,6 @@ This repository uses `.github/workflows/build-prd.yml` for validation and manual
 Pushes to `dev` use `.github/workflows/build-dev.yml` to run the same validation pipeline without the deploy job.
 The dev workflow uses the GitHub Actions environment `dev`; the main deploy job uses `prod`.
 The dev workflow also starts the compose stack and validates the Uptime Kuma target inventory against the internal Docker endpoints defined in `The Eyes/Uptime-Kuma/monitors.yml`. Its image warmup stage prunes unused Docker system resources first, skips local build outputs and builder-stage images, retries transient registry failures, attempts every remaining service pull, and fails once at the end with a consolidated list of denied or missing repositories. The FQDN proxy and scanner services stay on repo-local Dockerfiles, so their images are excluded from the pull phase because they are build outputs, not registry pulls. Both workflows can also pull through Harbor when `HARBOR_CACHE_*` variables are configured, which reduces direct dependence on the public registries.
-The dev workflow also exports BuildKit cache settings through `BUILDKIT_CACHE_FROM` and `BUILDKIT_CACHE_TO` so the local build contexts can reuse layers instead of redownloading them on every run.
 
 ## Required Repository Secrets
 

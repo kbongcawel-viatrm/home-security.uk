@@ -30,7 +30,7 @@ services:
   ############################################################
 
   secdns:
-    image: ${COREDNS_IMAGE:-coredns/coredns:${COREDNS_VERSION:-1.11.3}}
+    image: ${COREDNS_IMAGE:-docker.io/coredns/coredns:${COREDNS_VERSION:-1.11.3}}
     container_name: secdns
     profiles: ["dns", "all"]
     command: ["-conf", "/etc/coredns/Corefile"]
@@ -55,10 +55,6 @@ services:
     build:
       context: "./The Hands/FQDN proxy - Caddy"
       dockerfile: Dockerfile
-      cache_from:
-        - "${BUILDKIT_CACHE_FROM:-type=local,src=.buildx-cache}"
-      cache_to:
-        - "${BUILDKIT_CACHE_TO:-type=local,dest=.buildx-cache,mode=max}"
     image: hq-sec/caddy-crowdsec
     container_name: fqdn-proxy
     profiles: ["dns", "all"]
@@ -84,7 +80,7 @@ services:
     logging: *graylog-logging
 
   report-dashboard:
-    image: ${CADDY_IMAGE:-caddy:${CADDY_VERSION:-2.8.4-alpine}}
+    image: ${CADDY_IMAGE:-docker.io/library/caddy:${CADDY_VERSION:-2.8.4-alpine}}
     container_name: report-dashboard
     profiles: ["ops", "dashboard", "all"]
     volumes:
@@ -105,7 +101,7 @@ services:
   ############################################################
 
   ghost:
-    image: ${OLLAMA_IMAGE:-ollama/ollama:${GHOST_VERSION:-0.20.7}}
+    image: ${OLLAMA_IMAGE:-docker.io/ollama/ollama:${GHOST_VERSION:-0.20.7}}
     container_name: ghost
     profiles: ["ghost", "llm", "all"]
     volumes:
@@ -124,7 +120,7 @@ services:
     logging: *graylog-logging
 
   ghost-model-pull:
-    image: ${OLLAMA_IMAGE:-ollama/ollama:${GHOST_VERSION:-0.20.7}}
+    image: ${OLLAMA_IMAGE:-docker.io/ollama/ollama:${GHOST_VERSION:-0.20.7}}
     container_name: ghost-model-pull
     profiles: ["ghost", "llm", "all"]
     environment:
@@ -150,7 +146,7 @@ services:
     logging: *graylog-logging
 
   uptime-kuma:
-    image: ${UPTIME_KUMA_IMAGE:-louislam/uptime-kuma:${UPTIME_KUMA_VERSION:-1.23.16}}
+    image: ${UPTIME_KUMA_IMAGE:-docker.io/louislam/uptime-kuma:${UPTIME_KUMA_VERSION:-1.23.16}}
     container_name: uptime-kuma
     profiles: ["ops", "monitor", "all"]
     volumes:
@@ -169,7 +165,7 @@ services:
     logging: *graylog-logging
 
   uptime-kuma-sync:
-    image: ${PYTHON_IMAGE:-python:${PYTHON_ALPINE_VERSION:-3.12-alpine}}
+    image: ${PYTHON_IMAGE:-docker.io/library/python:${PYTHON_ALPINE_VERSION:-3.12-alpine}}
     container_name: uptime-kuma-sync
     profiles: ["ops", "monitor", "all"]
     environment:
@@ -191,7 +187,7 @@ services:
     logging: *graylog-logging
 
   container-health-exporter:
-    image: ${PYTHON_IMAGE:-python:${PYTHON_ALPINE_VERSION:-3.12-alpine}}
+    image: ${PYTHON_IMAGE:-docker.io/library/python:${PYTHON_ALPINE_VERSION:-3.12-alpine}}
     container_name: container-health-exporter
     profiles: ["ops", "monitor", "all"]
     volumes:
@@ -213,7 +209,7 @@ services:
   ############################################################
 
   portainer:
-    image: ${PORTAINER_CE_IMAGE:-portainer/portainer-ce:${PORTAINER_VERSION:-latest}}
+    image: ${PORTAINER_CE_IMAGE:-docker.io/portainer/portainer-ce:${PORTAINER_VERSION:-latest}}
     container_name: portainer
     profiles: ["ops", "monitor", "all"]
     restart: unless-stopped
@@ -228,7 +224,7 @@ services:
     logging: *graylog-logging
 
   log-forwarder:
-    image: ${FLUENT_BIT_IMAGE:-fluent/fluent-bit:${FLUENT_BIT_VERSION:-3.2.10}}
+    image: ${FLUENT_BIT_IMAGE:-docker.io/fluent/fluent-bit:${FLUENT_BIT_VERSION:-3.2.10}}
     container_name: log-forwarder
     profiles: ["ops", "logs", "all"]
     volumes:
@@ -249,7 +245,7 @@ services:
     logging: *graylog-logging
 
   graylog-bootstrap:
-    image: ${CURL_IMAGE:-curlimages/curl:${CURL_VERSION:-8.10.1}}
+    image: ${CURL_IMAGE:-docker.io/curlimages/curl:${CURL_VERSION:-8.10.1}}
     container_name: graylog-bootstrap
     profiles: ["ops", "logs", "all"]
     environment:
@@ -270,7 +266,7 @@ services:
     logging: *graylog-logging
 
   ghost-assessor:
-    image: ${PYTHON_IMAGE:-python:${PYTHON_ALPINE_VERSION:-3.12-alpine}}
+    image: ${PYTHON_IMAGE:-docker.io/library/python:${PYTHON_ALPINE_VERSION:-3.12-alpine}}
     container_name: ghost-assessor
     profiles: ["ghost", "llm", "all"]
     environment:
@@ -324,7 +320,7 @@ services:
   ############################################################
 
   vault:
-    image: ${VAULT_IMAGE:-hashicorp/vault:${VAULT_VERSION:-1.18}}
+    image: ${VAULT_IMAGE:-docker.io/hashicorp/vault:${VAULT_VERSION:-1.18}}
     container_name: vault
     profiles: ["secrets", "all"]
     cap_add:
@@ -353,7 +349,7 @@ services:
     logging: *graylog-logging
 
   vault-rotator:
-    image: ${VAULT_IMAGE:-hashicorp/vault:${VAULT_VERSION:-1.18}}
+    image: ${VAULT_IMAGE:-docker.io/hashicorp/vault:${VAULT_VERSION:-1.18}}
     container_name: vault-rotator
     profiles: ["secrets", "all"]
     environment:
@@ -380,7 +376,7 @@ services:
   ############################################################
 
   volume-backup:
-    image: ${ALPINE_IMAGE:-alpine:${BACKUP_ALPINE_VERSION:-3.20}}
+    image: ${ALPINE_IMAGE:-docker.io/library/alpine:${BACKUP_ALPINE_VERSION:-3.20}}
     container_name: volume-backup
     profiles: ["ops", "backup", "all"]
     environment:
@@ -431,7 +427,7 @@ services:
     logging: *graylog-logging
 
   container-vuln-scanner:
-    image: ${TRIVY_IMAGE:-aquasec/trivy:${TRIVY_VERSION:-0.70.0}}
+    image: ${TRIVY_IMAGE:-docker.io/aquasec/trivy:${TRIVY_VERSION:-0.70.0}}
     container_name: container-vuln-scanner
     profiles: ["ops", "scanner", "all"]
     environment:
@@ -453,7 +449,7 @@ services:
   ############################################################
 
   wazuh-indexer:
-    image: ${WAZUH_INDEXER_IMAGE:-wazuh/wazuh-indexer:${WAZUH_VERSION:-4.14.4}}
+    image: ${WAZUH_INDEXER_IMAGE:-docker.io/wazuh/wazuh-indexer:${WAZUH_VERSION:-4.14.4}}
     container_name: wazuh-indexer
     profiles: ["brain", "all"]
     environment:
@@ -480,7 +476,7 @@ services:
     logging: *graylog-logging
 
   wazuh-manager:
-    image: ${WAZUH_MANAGER_IMAGE:-wazuh/wazuh-manager:${WAZUH_VERSION:-4.14.4}}
+    image: ${WAZUH_MANAGER_IMAGE:-docker.io/wazuh/wazuh-manager:${WAZUH_VERSION:-4.14.4}}
     container_name: wazuh-manager
     hostname: wazuh-manager
     profiles: ["brain", "all"]
@@ -512,7 +508,7 @@ services:
     logging: *graylog-logging
 
   wazuh-dashboard:
-    image: ${WAZUH_DASHBOARD_IMAGE:-wazuh/wazuh-dashboard:${WAZUH_VERSION:-4.14.4}}
+    image: ${WAZUH_DASHBOARD_IMAGE:-docker.io/wazuh/wazuh-dashboard:${WAZUH_VERSION:-4.14.4}}
     container_name: wazuh-dashboard
     profiles: ["brain", "all"]
     environment:
@@ -538,7 +534,7 @@ services:
     logging: *graylog-logging
 
   graylog-mongo:
-    image: ${MONGO_IMAGE:-mongo:${MONGO_VERSION:-7.0.29}}
+    image: ${MONGO_IMAGE:-docker.io/library/mongo:${MONGO_VERSION:-7.0.29}}
     container_name: graylog-mongo
     profiles: ["brain", "all"]
     volumes:
@@ -554,7 +550,7 @@ services:
     logging: *graylog-logging
 
   graylog-datanode:
-    image: ${GRAYLOG_DATANODE_IMAGE:-graylog/graylog-datanode:${GRAYLOG_VERSION:-7.0.6}}
+    image: ${GRAYLOG_DATANODE_IMAGE:-docker.io/graylog/graylog-datanode:${GRAYLOG_VERSION:-7.0.6}}
     container_name: graylog-datanode
     profiles: ["brain", "all"]
     hostname: graylog-datanode
@@ -586,7 +582,7 @@ services:
     logging: *graylog-logging
 
   graylog:
-    image: ${GRAYLOG_IMAGE:-graylog/graylog:${GRAYLOG_VERSION:-7.0.6}}
+    image: ${GRAYLOG_IMAGE:-docker.io/graylog/graylog:${GRAYLOG_VERSION:-7.0.6}}
     container_name: graylog
     profiles: ["brain", "all"]
     hostname: graylog
@@ -628,7 +624,7 @@ services:
   ############################################################
 
   suricata:
-    image: ${SURICATA_IMAGE:-jasonish/suricata:${SURICATA_VERSION:-7.0}}
+    image: ${SURICATA_IMAGE:-docker.io/jasonish/suricata:${SURICATA_VERSION:-7.0}}
     container_name: suricata
     profiles: ["network", "all"]
     network_mode: host
@@ -655,7 +651,7 @@ services:
     logging: *graylog-logging
 
   suricata-rules-update:
-    image: ${SURICATA_IMAGE:-jasonish/suricata:${SURICATA_VERSION:-7.0}}
+    image: ${SURICATA_IMAGE:-docker.io/jasonish/suricata:${SURICATA_VERSION:-7.0}}
     container_name: suricata-rules-update
     profiles: ["network", "all"]
     environment:
@@ -673,7 +669,7 @@ services:
     logging: *graylog-logging
 
   zeek:
-    image: ${ZEEK_IMAGE:-zeek/zeek:${ZEEK_VERSION:-lts}}
+    image: ${ZEEK_IMAGE:-docker.io/zeek/zeek:${ZEEK_VERSION:-lts}}
     container_name: zeek
     profiles: ["network", "all"]
     network_mode: host
@@ -691,7 +687,7 @@ services:
   ############################################################
 
   thehive:
-    image: ${THEHIVE_IMAGE:-strangebee/thehive:${THEHIVE_VERSION:-5.7}}
+    image: ${THEHIVE_IMAGE:-docker.io/strangebee/thehive:${THEHIVE_VERSION:-5.7}}
     container_name: thehive
     profiles: ["ir", "all"]
     environment:
@@ -714,7 +710,7 @@ services:
     logging: *graylog-logging
 
   shuffle-opensearch:
-    image: ${OPENSEARCH_IMAGE:-opensearchproject/opensearch:3.2.0}
+    image: ${OPENSEARCH_IMAGE:-docker.io/opensearchproject/opensearch:3.2.0}
     container_name: shuffle-opensearch
     profiles: ["ir", "all"]
     environment:
@@ -829,7 +825,7 @@ services:
     logging: *graylog-logging
 
   velociraptor:
-    image: ${VELOCIRAPTOR_IMAGE:-xboarder56/velociraptor:${VELOCIRAPTOR_VERSION:-0.76.1}}
+    image: ${VELOCIRAPTOR_IMAGE:-docker.io/xboarder56/velociraptor:${VELOCIRAPTOR_VERSION:-0.76.1}}
     container_name: velociraptor
     profiles: ["ir", "all"]
     environment:
@@ -852,7 +848,7 @@ services:
     logging: *graylog-logging
 
   crowdsec:
-    image: ${CROWDSEC_IMAGE:-crowdsecurity/crowdsec:${CROWDSEC_VERSION:-v1.6.3}}
+    image: ${CROWDSEC_IMAGE:-docker.io/crowdsecurity/crowdsec:${CROWDSEC_VERSION:-v1.6.3}}
     container_name: crowdsec
     profiles: ["ir", "all", "shield"]
     environment:
@@ -874,7 +870,7 @@ services:
     logging: *graylog-logging
 
   ansible-ir:
-    image: ${ANSIBLE_IMAGE:-cytopia/ansible:${ANSIBLE_VERSION:-2.16-tools}}
+    image: ${ANSIBLE_IMAGE:-docker.io/cytopia/ansible:${ANSIBLE_VERSION:-2.16-tools}}
     container_name: ansible-ir
     profiles: ["ir", "all"]
     user: "${SECSTACK_UID:-1000}:${SECSTACK_GID:-1000}"
@@ -895,7 +891,7 @@ services:
   ############################################################
 
   osquery:
-    image: ${OSQUERY_IMAGE:-osquery/osquery:${OSQUERY_VERSION:-5.8.2-ubuntu22.04}}
+    image: ${OSQUERY_IMAGE:-docker.io/osquery/osquery:${OSQUERY_VERSION:-5.8.2-ubuntu22.04}}
     container_name: osquery
     profiles: ["vuln", "all"]
     user: "${SECSTACK_UID:-1000}:${SECSTACK_GID:-1000}"
@@ -934,7 +930,7 @@ services:
     logging: *graylog-logging
 
   scap-data:
-    image: ${GREENBONE_SCAP_DATA_IMAGE:-${SCAP_DATA_IMAGE:-vulnvision/greenbone-scap-data:latest}}
+    image: ${GREENBONE_SCAP_DATA_IMAGE:-${SCAP_DATA_IMAGE:-docker.io/vulnvision/greenbone-scap-data:latest}}
     container_name: scap-data
     profiles: ["vuln", "all"]
     environment:
@@ -1012,7 +1008,7 @@ services:
     logging: *graylog-logging
 
   redis-server:
-    image: ${REDIS_SERVER_IMAGE:-greenbone/redis-server:${GREENBONE_REDIS_TAG:-latest}}
+    image: ${REDIS_SERVER_IMAGE:-docker.io/greenbone/redis-server:${GREENBONE_REDIS_TAG:-latest}}
     container_name: redis-server
     profiles: ["vuln", "all"]
     restart: unless-stopped
@@ -1288,10 +1284,6 @@ services:
     build:
       context: "./The Eyes/nmap"
       dockerfile: Dockerfile
-      cache_from:
-        - "${BUILDKIT_CACHE_FROM:-type=local,src=.buildx-cache}"
-      cache_to:
-        - "${BUILDKIT_CACHE_TO:-type=local,dest=.buildx-cache,mode=max}"
     image: hq-sec-stack-nmap-scanner
     container_name: nmap-scanner
     profiles: ["network", "all"]
@@ -1308,10 +1300,6 @@ services:
     build:
       context: "./The Eyes/wireshark"
       dockerfile: Dockerfile
-      cache_from:
-        - "${BUILDKIT_CACHE_FROM:-type=local,src=.buildx-cache}"
-      cache_to:
-        - "${BUILDKIT_CACHE_TO:-type=local,dest=.buildx-cache,mode=max}"
     image: hq-sec-stack-wireshark-scanner
     container_name: wireshark-scanner
     profiles: ["network", "all"]
@@ -1379,5 +1367,3 @@ volumes:
   crowdsec-config:
   caddy-logs:
   portainer-data:
-
-

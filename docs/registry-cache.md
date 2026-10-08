@@ -12,7 +12,7 @@ The helper script at [`scripts/prewarm-registry-cache.py`](../scripts/prewarm-re
 4. Pulls through Harbor proxy cache projects when Harbor cache variables are configured, then retags the image locally under the original name.
 5. Skips local build outputs and builder-stage images such as `hq-sec/caddy-crowdsec` from [The Hands/FQDN proxy - Caddy/Dockerfile](../The%20Hands/FQDN%20proxy%20-%20Caddy/Dockerfile), `hq-sec-stack-nmap-scanner`, `hq-sec-stack-wireshark-scanner` from the repo-local scanner Dockerfiles, and `caddy:builder-alpine`.
 
-The workflows and `scripts/start-stack.sh` use `--pull never` after prewarming so Docker does not go back to the upstream registries during startup. BuildKit is enabled with `DOCKER_BUILDKIT=1` and `COMPOSE_DOCKER_CLI_BUILD=1` so `cache-from` and `cache-to` are actually consumed by Compose builds.
+The workflows use `--pull never` after prewarming so Docker does not go back to the upstream registries during startup. The Compose file avoids BuildKit-only cache export fields so its local Dockerfile builds also work through Podman's `podman-compose` provider.
 
 ## Harbor Setup
 
