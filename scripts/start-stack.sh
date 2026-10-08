@@ -10,6 +10,7 @@ WAIT_HEALTH="${WAIT_HEALTH:-true}"
 HEALTH_TIMEOUT_SECONDS="${HEALTH_TIMEOUT_SECONDS:-900}"
 USE_VAULT_ENV="${USE_VAULT_ENV:-true}"
 CONTAINER_ENGINE="${CONTAINER_ENGINE:-}"
+PODMAN_COMPOSE_FILE=""
 
 log() {
   printf '%s %s\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "$*"
@@ -68,6 +69,35 @@ prepare_workspace() {
   fi
 
   mkdir -p "The Hands/backups" "The Hands/reports/data/container-vulnerabilities" "The Sword/Ansible/.ssh" "The Sword/Suricata/rules"
+}
+
+prepare_podman_compose() {
+  if [ "${CONTAINER_ENGINE}" != "podman" ]; then
+    return 0
+  fi
+
+  CONTAINER_SOCKET_PATH="${CONTAINER_SOCKET_PATH:-/run/user/$(id -u)/podman/podman.sock}"
+  export CONTAINER_SOCKET_PATH
+
+  source_compose_file="${COMPOSE_FILE}"
+  case "${source_compose_file}" in
+    /*) ;;
+    *) source_compose_file="${PROJECT_ROOT}/${source_compose_file}" ;;
+  esac
+  PODMAN_COMPOSE_FILE="${PROJECT_ROOT}/.security-stack.podman.$$.yml"
+  # Podman does not implement Docker's GELF logging driver. Keep the Docker
+  # Compose file unchanged and use journald in a temporary Podman variant.
+  sed \
+    -e 's/driver: gelf/driver: journald/' \
+    -e '/^[[:space:]]*options:$/d' \
+    -e '/^[[:space:]]*gelf-address:/d' \
+    -e '/^[[:space:]]*tag: "{{.Name}}"/d' \
+    "${source_compose_file}" > "${PODMAN_COMPOSE_FILE}"
+  COMPOSE_FILE="${PODMAN_COMPOSE_FILE}"
+  trap 'rm -f "${PODMAN_COMPOSE_FILE}"' 0
+  trap 'exit 1' HUP INT TERM
+  log "using Podman socket: ${CONTAINER_SOCKET_PATH}"
+  log "using journald logging for Podman"
 }
 
 render_vault_env() {
@@ -135,6 +165,7 @@ wait_for_health() {
 main() {
   select_container_engine
   prepare_workspace
+  prepare_podman_compose
   render_vault_env
   apply_sysctl
 

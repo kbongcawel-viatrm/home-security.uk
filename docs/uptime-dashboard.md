@@ -72,7 +72,7 @@ For one-shot initialization jobs that should finish successfully instead of stay
 http://container-health-exporter:8080/container/<container-name>?mode=completed
 ```
 
-This requires read access to `/var/run/docker.sock`. Treat Docker socket access as privileged host access and keep the exporter internal to `secnet`.
+The exporter reads the Docker-compatible socket at `/var/run/docker.sock` inside its container. With Podman, `scripts/start-stack.sh` mounts the rootless Podman socket there. Treat access as privileged host access and keep the exporter internal to `secnet`.
 
 ## Validation
 

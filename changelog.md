@@ -2,6 +2,7 @@
 
 | Commit Message | Branch | Hash | Date |
 | --- | --- | --- | --- |
+| Document Podman startup and firewall setup | main | — | 2026-10-09 |
 | Add Podman fallback for stack scripts | main | — | 2026-10-09 |
 | Group AI agent skills under Agents and update module references | main | — | 2026-10-08 |
 | Add production artifact load workflow and simplify dev build flow | codex-artifact-workflows-from-change | 336c995 | 2026-05-03 23:36:06 +08:00 |

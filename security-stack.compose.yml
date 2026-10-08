@@ -61,8 +61,8 @@ services:
     environment:
       CADDY_CROWDSEC_API_KEY: "${CADDY_CROWDSEC_API_KEY}"
     ports:
-      - "${FQDN_HTTP_HOST_IP:-127.0.0.1}:${FQDN_HTTP_PORT:-80}:80"
-      - "${FQDN_HTTPS_HOST_IP:-127.0.0.1}:${FQDN_HTTPS_PORT:-443}:443"
+      - "${FQDN_HTTP_HOST_IP:-127.0.0.1}:${FQDN_HTTP_PORT:-8081}:80"
+      - "${FQDN_HTTPS_HOST_IP:-127.0.0.1}:${FQDN_HTTPS_PORT:-8443}:443"
     volumes:
       - "./The Hands/FQDN proxy - Caddy/Caddyfile:/etc/caddy/Caddyfile:ro"
       - fqdn-proxy-data:/data
@@ -192,7 +192,7 @@ services:
     profiles: ["ops", "monitor", "all"]
     volumes:
       - "./The Eyes/Uptime-Kuma/scripts/container-health-exporter.py:/container-health-exporter.py:ro"
-      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - "${CONTAINER_SOCKET_PATH:-/var/run/docker.sock}:/var/run/docker.sock:ro"
     entrypoint: ["python", "/container-health-exporter.py"]
     networks:
       - secnet
@@ -214,12 +214,12 @@ services:
     profiles: ["ops", "monitor", "all"]
     restart: unless-stopped
     volumes:
-      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - "${CONTAINER_SOCKET_PATH:-/var/run/docker.sock}:/var/run/docker.sock:ro"
       - portainer-data:/data
     networks:
       - secnet
     ports:
-      - "${STACK_BIND_IP:-127.0.0.1}:${PORTAINER_HTTP_PORT:-9000}:9000"
+      - "${STACK_BIND_IP:-127.0.0.1}:${PORTAINER_HTTP_PORT:-9002}:9000"
       - "${STACK_BIND_IP:-127.0.0.1}:${PORTAINER_HTTPS_PORT:-9443}:9443"
     logging: *graylog-logging
 
@@ -754,7 +754,7 @@ services:
       SHUFFLE_OPENSEARCH_SKIPSSL_VERIFY: "true"
       SHUFFLE_APP_SECRET: "${SHUFFLE_APP_SECRET:-CHANGE_ME_SHUFFLE_LAB_SECRET}"
     volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
+      - "${CONTAINER_SOCKET_PATH:-/var/run/docker.sock}:/var/run/docker.sock"
       - shuffle-apps:/shuffle-apps
       - shuffle-files:/shuffle-files
     networks:
@@ -813,7 +813,7 @@ services:
       CLEANUP: "false"
       SHUFFLE_WORKER_IMAGE: "ghcr.io/shuffle/shuffle-worker:${SHUFFLE_WORKER_VERSION:-nightly}"
     volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
+      - "${CONTAINER_SOCKET_PATH:-/var/run/docker.sock}:/var/run/docker.sock"
     networks:
       - secnet
     restart: unless-stopped
@@ -1133,7 +1133,7 @@ services:
     profiles: ["vuln", "all"]
     restart: unless-stopped
     ports:
-      - "${STACK_BIND_IP:-127.0.0.1}:${GREENBONE_HTTPS_PORT:-9443}:443"
+      - "${STACK_BIND_IP:-127.0.0.1}:${GREENBONE_HTTPS_PORT:-9444}:443"
       - "${STACK_BIND_IP:-127.0.0.1}:${GREENBONE_GSA_PORT:-9392}:9392"
     volumes:
       - greenbone-nginx-config:/etc/nginx/conf.d:ro

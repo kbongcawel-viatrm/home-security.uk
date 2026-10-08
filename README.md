@@ -10,19 +10,51 @@ A comprehensive home security stack aimed at implementing file integrity monitor
 
 ## Quick Start
 
+Prepare the environment file and replace its example credentials before starting services:
+
 ```bash
 cp .env.example .env
-sh scripts/start-stack.sh
 ```
 
-To gracefully stop everything:
+Start the full stack with Docker Compose, or choose Podman explicitly:
+
+```bash
+sh scripts/start-stack.sh
+CONTAINER_ENGINE=podman sh scripts/start-stack.sh
+```
+
+`scripts/start-stack.sh` creates `.env` from `.env.example` if it is missing, validates the Compose configuration, pulls images, builds local images, and starts the `all` profile. Set `SECSTACK_PROFILES` to start selected profiles; for example:
+
+```bash
+SECSTACK_PROFILES="dns secrets brain" CONTAINER_ENGINE=podman sh scripts/start-stack.sh
+```
+
+If the required images are already present locally, `PULL_IMAGES=false` skips the pull step. For Podman, install `podman` and a Compose provider such as `podman-compose`, then enable the user socket before starting services that manage other containers:
+
+```bash
+systemctl --user enable --now podman.socket
+CONTAINER_ENGINE=podman sh scripts/start-stack.sh
+```
+
+If the host uses firewalld and services need to be reachable beyond loopback, allow the stack's default published ports before startup:
+
+```bash
+sh scripts/allow-firewall-ports.sh
+```
+
+The helper uses `sudo firewall-cmd`, targets the default zone, and adds permanent rules. Set `FIREWALL_ZONE=public` (or another zone) to choose a zone. Review `.env` bind addresses and port overrides first; update the helper's port list if you change the default host ports. Firewall rules do not change the stack's default loopback-only bindings.
+
+To gracefully stop the stack, run:
+
 ```bash
 sh scripts/killswitch.sh
 ```
 
-The scripts use Docker Compose when Docker is installed, and fall back to Podman when Docker is unavailable. For Podman, install `podman` and a Compose provider supported by `podman compose` (such as `podman-compose`). Select it explicitly with `CONTAINER_ENGINE=podman sh scripts/start-stack.sh`; the same setting works with `scripts/killswitch.sh`. Commands below use Docker syntax; replace `docker` with `podman` when operating a Podman stack.
+The scripts use Docker Compose when Docker is installed, and fall back to Podman when Docker is unavailable. The same `CONTAINER_ENGINE` setting works with `scripts/killswitch.sh`. The startup script uses journald logging with Podman because Podman does not support Docker's GELF logging driver. Commands below use Docker syntax; replace `docker` with `podman` when operating a Podman stack.
 
-Some services that control other containers (including Portainer, Shuffle, and the container health exporter) connect to `/var/run/docker.sock`. They need a Docker-compatible API socket and may not work with a default Podman setup. Podman also differs in host networking, device/capability handling, and rootless port binding; review those services and host requirements before enabling their profiles.
+Some services that control other containers (including Portainer, Shuffle, and the container health exporter) connect to a Docker-compatible API socket at `/var/run/docker.sock` inside their containers. When started with Podman, the script mounts the rootless Podman socket (normally `/run/user/$(id -u)/podman/podman.sock`) at that path. Ensure the user Podman socket is active with `systemctl --user enable --now podman.socket`. Override its host path with `CONTAINER_SOCKET_PATH` if needed. Socket access grants substantial control over the host's containers. Podman also differs in host networking, device/capability handling, and rootless port binding; review those services and host requirements before enabling their profiles.
+
+The example ports use unprivileged host ports and avoid collisions between services. The default `STACK_BIND_IP`, `FQDN_HTTP_HOST_IP`, and `FQDN_HTTPS_HOST_IP` values bind to loopback, so the services remain local even when firewall rules are added.
 
 ## Available Profiles
 
@@ -152,7 +184,7 @@ This is a lab stack. Replace all default passwords and secrets in your `.env` be
 
 Some containers require privileged access:
 - Suricata, Zeek, and Wireshark require host networking and packet-capture capabilities.
-- Portainer and Shuffle mount `/var/run/docker.sock` to manage the environment.
+- Portainer and Shuffle mount a container-engine API socket to manage the environment; Podman startup maps its socket to the Docker-compatible path expected by those services.
 - Greenbone scanner requires network scanning capabilities.
 
 **Do not run vulnerability scans, containment playbooks, or endpoint collection against systems without authorization.**

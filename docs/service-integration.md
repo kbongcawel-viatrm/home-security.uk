@@ -14,7 +14,7 @@ This stack is a Linux Docker Engine lab for SOC telemetry, incident response, an
 | `llm` | Local LLM assessment and report generation | The Ghost `http://localhost:11434`, `ghost.hq-sec.local`; reports in `./The Hands/reports/data/log-assessments` |
 | `network` | Suricata, Zeek | Host-network capture on `${SENSOR_INTERFACE}`; logs in `suricata-logs` and `zeek-logs` volumes |
 | `ir` | TheHive, Shuffle, Velociraptor, Ansible | TheHive `http://localhost:9001`, Shuffle frontend `http://localhost:3001`, Shuffle API `5001`, Velociraptor GUI `http://localhost:8889`, frontend `8000` |
-| `vuln` | Osquery, Greenbone Community services | Greenbone Security Assistant `https://localhost:9443` or redirect port `9392`, osquery interactive shell |
+| `vuln` | Osquery, Greenbone Community services | Greenbone Security Assistant `https://localhost:9444` or redirect port `9392`, osquery interactive shell |
 
 ## Data Flow
 
@@ -46,7 +46,7 @@ Services use image-default users unless a numeric non-root user is known to be s
 
 Suricata and Zeek are controlled exceptions. Packet capture requires host networking plus `NET_ADMIN` and `NET_RAW`; Suricata is configured to drop runtime privileges to `${SURICATA_RUN_USER}:${SURICATA_RUN_GROUP}` after opening the interface.
 
-Shuffle mounts `/var/run/docker.sock` in the backend and Orborus containers so workflows can launch worker containers. Treat that as host-root equivalent access. For shared environments, replace it with a Docker socket proxy and restrict available Docker APIs.
+Shuffle mounts a container-engine API socket in the backend and Orborus containers so workflows can launch worker containers. The startup script maps the Podman socket to `/var/run/docker.sock` inside the containers when using Podman. Treat socket access as host-root equivalent. For shared environments, replace it with a restricted API proxy.
 
 ## Verification
 
