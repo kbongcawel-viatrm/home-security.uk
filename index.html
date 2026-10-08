@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Home Security Dashboard - Cloudflare Zero Trust</title>
+  <title> Dashboard </title>
   <style>
     :root {
       --primary-black: #000000;
@@ -255,28 +255,414 @@
       .services-grid {
         grid-template-columns: 1fr;
       }
+      
     }
   </style>
 </head>
 <body>
-  <header>
-    <h1>🔐 Home Security Dashboard</h1>
-    <p>Cloudflare Zero Trust Network Access</p>
-  </header>
+<header>
+  <h1 class="dashboard-title">
+    <img
+      src="https://raw.githubusercontent.com/kbongcawel-viatrm/home-security.uk/main/docs/firewall_4741869.png"
+      alt="Home Security Firewall"
+      class="firewall-icon"
+    >
+    Home Security Dashboard
+  </h1>
+  <p>Cloudflare Zero Trust Network Access</p>
+</header>
 
+<style>
+.dashboard-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.firewall-icon {
+  width: 40px;
+  height: 40px;
+  object-fit: contain;
+}
+</style>
+
+<style>
+.dashboard-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.firewall-icon {
+  width: 40px;
+  height: 40px;
+  object-fit: contain;
+}
+  
+.tech-slider {
+  width: 100%;
+  max-width: 1200px;
+  margin: 40px auto;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.tech-slider-window {
+  overflow: hidden;
+  width: 100%;
+}
+
+.tech-slider-track {
+  display: flex;
+  gap: 18px;
+  transition: transform 0.5s ease;
+  will-change: transform;
+}
+
+.tech-item {
+  flex: 0 0 150px;
+  height: 130px;
+
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+
+  gap: 12px;
+
+  text-decoration: none;
+  color: inherit;
+
+  border: 1px solid rgba(128, 128, 128, 0.25);
+  border-radius: 14px;
+
+  background: rgba(255, 255, 255, 0.04);
+
+  transition:
+    transform 0.25s ease,
+    border-color 0.25s ease,
+    background 0.25s ease,
+    box-shadow 0.25s ease;
+}
+
+.tech-item:hover {
+  transform: translateY(-5px);
+  border-color: rgba(0, 150, 255, 0.6);
+  background: rgba(0, 150, 255, 0.08);
+  box-shadow: 0 8px 25px rgba(0, 0, 0, 0.15);
+}
+
+.tech-item img {
+  width: 52px;
+  height: 52px;
+  object-fit: contain;
+}
+
+.tech-item span {
+  font-size: 14px;
+  font-weight: 600;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.slider-btn {
+  flex: 0 0 42px;
+  width: 42px;
+  height: 42px;
+
+  border: none;
+  border-radius: 50%;
+
+  background: rgba(0, 0, 0, 0.7);
+  color: white;
+
+  font-size: 22px;
+  cursor: pointer;
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  z-index: 2;
+
+  transition:
+    background 0.2s ease,
+    transform 0.2s ease;
+}
+
+.slider-btn:hover {
+  background: rgba(0, 120, 255, 0.9);
+  transform: scale(1.08);
+}
+
+@media (max-width: 900px) {
+  .tech-item {
+    flex-basis: 135px;
+    height: 120px;
+  }
+
+  .tech-item img {
+    width: 46px;
+    height: 46px;
+  }
+}
+
+@media (max-width: 600px) {
+  .tech-slider {
+    gap: 6px;
+  }
+
+  .slider-btn {
+    flex: 0 0 34px;
+    width: 34px;
+    height: 34px;
+    font-size: 18px;
+  }
+
+  .tech-item {
+    flex-basis: 115px;
+    height: 110px;
+  }
+
+  .tech-item img {
+    width: 40px;
+    height: 40px;
+  }
+
+  .tech-item span {
+    font-size: 12px;
+  }
+}
+</style>
+  
+<script>
+const track = document.querySelector(".tech-slider-track");
+const nextButton = document.querySelector(".next");
+const prevButton = document.querySelector(".prev");
+const slider = document.querySelector(".tech-slider");
+
+let position = 0;
+let autoSlide;
+
+function getStep() {
+  const item = document.querySelector(".tech-item");
+
+  if (!item) return 0;
+
+  const gap = parseFloat(
+    getComputedStyle(track).gap
+  );
+
+  return item.offsetWidth + gap;
+}
+
+function getVisibleItems() {
+  const windowWidth =
+    document.querySelector(".tech-slider-window").offsetWidth;
+
+  return Math.max(
+    1,
+    Math.floor(windowWidth / getStep())
+  );
+}
+
+function getMaxPosition() {
+  const items =
+    document.querySelectorAll(".tech-item").length;
+
+  const visible = getVisibleItems();
+
+  return Math.max(0, items - visible);
+}
+
+function updateSlider() {
+  track.style.transform =
+    `translateX(-${position * getStep()}px)`;
+}
+
+function nextSlide() {
+  const maxPosition = getMaxPosition();
+
+  position =
+    position >= maxPosition
+      ? 0
+      : position + 1;
+
+  updateSlider();
+}
+
+function prevSlide() {
+  const maxPosition = getMaxPosition();
+
+  position =
+    position <= 0
+      ? maxPosition
+      : position - 1;
+
+  updateSlider();
+}
+
+function startAutoSlide() {
+  clearInterval(autoSlide);
+  autoSlide = setInterval(nextSlide, 3000);
+}
+
+nextButton.addEventListener("click", () => {
+  nextSlide();
+  startAutoSlide();
+});
+
+prevButton.addEventListener("click", () => {
+  prevSlide();
+  startAutoSlide();
+});
+
+slider.addEventListener("mouseenter", () => {
+  clearInterval(autoSlide);
+});
+
+slider.addEventListener("mouseleave", () => {
+  startAutoSlide();
+});
+
+window.addEventListener("resize", () => {
+  position = Math.min(
+    position,
+    getMaxPosition()
+  );
+
+  updateSlider();
+});
+
+startAutoSlide();
+</script>
+  
   <nav>
-    <a href="#overview">Overview</a>
+    <a href="#overview">Home</a>
     <a href="#services">Services</a>
-    <a href="#docs">Documentation</a>
+    <a href="#docs">Projects</a>
   </nav>
 
   <main>
     <section class="hero">
       <div class="hero-badge">🛡️ Secure Access Enabled</div>
       <h2>Your Security Dashboard</h2>
-      <p>Access your home security infrastructure through Cloudflare Zero Trust. All services are protected by advanced security policies and authentication.</p>
+      <div class="tech-slider">
+      <button class="slider-btn prev" aria-label="Previous">&#10094;</button>
+    
+      <div class="tech-slider-window">
+        <div class="tech-slider-track">
+    
+          <!-- Cloudflare -->
+          <a class="tech-item" href="https://www.cloudflare.com/" target="_blank" rel="noopener noreferrer">
+            <img src="https://api.iconify.design/simple-icons:cloudflare.svg" alt="Cloudflare">
+            <span>Cloudflare</span>
+          </a>
+    
+          <!-- Docker -->
+          <a class="tech-item" href="https://www.docker.com/" target="_blank" rel="noopener noreferrer">
+            <img src="https://api.iconify.design/simple-icons:docker.svg" alt="Docker">
+            <span>Docker</span>
+          </a>
+    
+          <!-- Suricata -->
+          <a class="tech-item" href="https://suricata.io/" target="_blank" rel="noopener noreferrer">
+            <img src="https://api.iconify.design/simple-icons:suricata.svg" alt="Suricata">
+            <span>Suricata</span>
+          </a>
+    
+          <!-- AWS -->
+          <a class="tech-item" href="https://aws.amazon.com/" target="_blank" rel="noopener noreferrer">
+            <img src="https://api.iconify.design/simple-icons:amazonaws.svg" alt="AWS">
+            <span>AWS</span>
+          </a>
+    
+          <!-- OpenVAS / Greenbone -->
+          <a class="tech-item" href="https://www.greenbone.net/" target="_blank" rel="noopener noreferrer">
+            <img src="https://api.iconify.design/simple-icons:greenbone.svg" alt="OpenVAS">
+            <span>OpenVAS</span>
+          </a>
+    
+          <!-- osquery -->
+          <a class="tech-item" href="https://osquery.io/" target="_blank" rel="noopener noreferrer">
+            <img src="https://api.iconify.design/simple-icons:osquery.svg" alt="osquery">
+            <span>osquery</span>
+          </a>
+    
+          <!-- HashiCorp Vault -->
+          <a class="tech-item" href="https://www.hashicorp.com/products/vault" target="_blank" rel="noopener noreferrer">
+            <img src="https://api.iconify.design/simple-icons:hashicorpvault.svg" alt="HashiCorp Vault">
+            <span>Vault</span>
+          </a>
+    
+          <!-- Velociraptor -->
+          <a class="tech-item" href="https://docs.velociraptor.app/" target="_blank" rel="noopener noreferrer">
+            <img src="https://api.iconify.design/simple-icons:velociraptor.svg" alt="Velociraptor">
+            <span>Velociraptor</span>
+          </a>
+    
+          <!-- Fail2Ban -->
+          <a class="tech-item" href="https://www.fail2ban.org/" target="_blank" rel="noopener noreferrer">
+            <img src="https://api.iconify.design/simple-icons:fail2ban.svg" alt="Fail2Ban">
+            <span>Fail2Ban</span>
+          </a>
+    
+          <!-- CrowdStrike -->
+          <a class="tech-item" href="https://www.crowdstrike.com/" target="_blank" rel="noopener noreferrer">
+            <img src="https://api.iconify.design/simple-icons:crowdstrike.svg" alt="CrowdStrike">
+            <span>CrowdStrike</span>
+          </a>
+    
+          <!-- Ansible -->
+          <a class="tech-item" href="https://www.ansible.com/" target="_blank" rel="noopener noreferrer">
+            <img src="https://api.iconify.design/simple-icons:ansible.svg" alt="Ansible">
+            <span>Ansible</span>
+          </a>
+    
+          <!-- Windows -->
+          <a class="tech-item" href="https://www.microsoft.com/windows/" target="_blank" rel="noopener noreferrer">
+            <img src="https://api.iconify.design/simple-icons:windows.svg" alt="Windows">
+            <span>Windows OS</span>
+          </a>
+    
+          <!-- Linux -->
+          <a class="tech-item" href="https://www.linux.org/" target="_blank" rel="noopener noreferrer">
+            <img src="https://api.iconify.design/simple-icons:linux.svg" alt="Linux">
+            <span>Linux OS</span>
+          </a>
+    
+          <!-- CoreDNS -->
+          <a class="tech-item" href="https://coredns.io/" target="_blank" rel="noopener noreferrer">
+            <img src="https://api.iconify.design/simple-icons:coredns.svg" alt="CoreDNS">
+            <span>CoreDNS</span>
+          </a>
+    
+          <!-- Caddy -->
+          <a class="tech-item" href="https://caddyserver.com/" target="_blank" rel="noopener noreferrer">
+            <img src="https://api.iconify.design/simple-icons:caddy.svg" alt="Caddy">
+            <span>Caddy</span>
+          </a>
+    
+          <!-- Fluent Bit -->
+          <a class="tech-item" href="https://fluentbit.io/" target="_blank" rel="noopener noreferrer">
+            <img src="https://api.iconify.design/simple-icons:fluentbit.svg" alt="Fluent Bit">
+            <span>Fluent Bit</span>
+          </a>
+    
+          <!-- Ollama -->
+          <a class="tech-item" href="https://ollama.com/" target="_blank" rel="noopener noreferrer">
+            <img src="https://api.iconify.design/simple-icons:ollama.svg" alt="Ollama">
+            <span>Ollama</span>
+          </a>
+    
+        </div>
+      </div>
+    
+      <button class="slider-btn next" aria-label="Next">&#10095;</button>
+    </div>
     </section>
-
+    
     <section class="services-section" id="services">
       <h3>Available Services</h3>
       <div class="services-grid">
