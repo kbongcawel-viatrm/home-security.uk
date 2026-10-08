@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>User Agent Check</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+
+        .container {
+            background: white;
+            border-radius: 10px;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+            padding: 40px;
+            max-width: 600px;
+            width: 100%;
+        }
+
+        h1 {
+            color: #333;
+            margin-bottom: 30px;
+            text-align: center;
+            font-size: 2em;
+        }
+
+        .link-section {
+            margin-bottom: 25px;
+        }
+
+        .link-section a {
+            display: block;
+            padding: 15px 20px;
+            margin-bottom: 10px;
+            text-decoration: none;
+            color: white;
+            border-radius: 5px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            text-align: center;
+            font-size: 1.1em;
+        }
+
+        .android-link {
+            background: linear-gradient(135deg, #3b82f6 0%, #1e40af 100%);
+        }
+
+        .android-link:hover {
+            background: linear-gradient(135deg, #1e40af 0%, #1e3a8a 100%);
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(30, 64, 175, 0.4);
+        }
+
+        .safari-link {
+            background: linear-gradient(135deg, #8b5cf6 0%, #6d28d9 100%);
+        }
+
+        .safari-link:hover {
+            background: linear-gradient(135deg, #6d28d9 0%, #5b21b6 100%);
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(109, 40, 217, 0.4);
+        }
+
+        .result-section {
+            background: #f5f5f5;
+            border-radius: 5px;
+            padding: 20px;
+            margin-top: 30px;
+            border-left: 4px solid #667eea;
+        }
+
+        .result-label {
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 10px;
+            font-size: 0.9em;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .result-text {
+            background: white;
+            padding: 12px;
+            border-radius: 4px;
+            color: #555;
+            font-family: 'Courier New', monospace;
+            font-size: 0.9em;
+            word-break: break-all;
+            min-height: 60px;
+            border: 1px solid #ddd;
+        }
+
+        .last-check {
+            font-size: 0.85em;
+            color: #999;
+            margin-top: 8px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>User Agent Check </h1>
+        
+         <p>
+             This page aims to give information on your browser's user agent.
+             By knowing the user agent, you can confirm consistency with the browser application you are currently using.
+             Added to that, you can confirm details such as existence of webview params.
+             
+         </p>
+
+        <div class="link-section">
+            <a href="#" class="android-link" onclick="checkAndroidUserAgent(event)">
+                📱 Check for Android
+            </a>
+            
+            <a href="#" class="safari-link" onclick="checkSafariUserAgent(event)">
+                🧭 Check for Safari
+            </a>
+        </div>
+
+        <div class="result-section">
+            <div class="result-label">Current User Agent</div>
+            <div class="result-text" id="userAgentResult">Click a link above to check your user agent</div>
+            <div class="last-check" id="lastCheck"></div>
+        </div>
+    </div>
+
+    <script>
+        function checkAndroidUserAgent(event) {
+            event.preventDefault();
+            const userAgent = navigator.userAgent;
+            const isAndroid = /Android/i.test(userAgent);
+            
+            document.getElementById('userAgentResult').textContent = userAgent;
+            document.getElementById('lastCheck').textContent = `Android Detected: ${isAndroid ? '✓ Yes' : '✗ No'} - Checked at ${new Date().toLocaleTimeString()}`;
+        }
+
+        function checkSafariUserAgent(event) {
+            event.preventDefault();
+            const userAgent = navigator.userAgent;
+            const isSafari = /Safari/i.test(userAgent) && !/Chrome/i.test(userAgent) && !/Chromium/i.test(userAgent);
+            
+            document.getElementById('userAgentResult').textContent = userAgent;
+            document.getElementById('lastCheck').textContent = `Safari Detected: ${isSafari ? '✓ Yes' : '✗ No'} - Checked at ${new Date().toLocaleTimeString()}`;
+        }
+    </script>
+</body>
+</html>
