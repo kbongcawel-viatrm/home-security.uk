@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Home Security Dashboard - Cloudflare Zero Trust</title>
+  <title> Dashboard </title>
   <style>
     :root {
       --primary-black: #000000;
@@ -255,28 +255,457 @@
       .services-grid {
         grid-template-columns: 1fr;
       }
+      
     }
   </style>
 </head>
 <body>
-  <header>
-    <h1>🔐 Home Security Dashboard</h1>
-    <p>Cloudflare Zero Trust Network Access</p>
-  </header>
+<header>
+  <h1 class="dashboard-title">
+    <img
+      src="https://raw.githubusercontent.com/kbongcawel-viatrm/home-security.uk/main/docs/firewall_4741869.png"
+      alt="Home Security Firewall"
+      class="firewall-icon"
+    >
+    Home Security Dashboard
+  </h1>
+  <p>Cloudflare Zero Trust Network Access</p>
+</header>
 
+<style>
+.dashboard-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.firewall-icon {
+  width: 40px;
+  height: 40px;
+  object-fit: contain;
+}
+</style>
+
+<style>
+.dashboard-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.firewall-icon {
+  width: 40px;
+  height: 40px;
+  object-fit: contain;
+}
+  
+.tech-slider {
+  width: 100%;
+  max-width: 1200px;
+  margin: 40px auto;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.tech-slider-window {
+  overflow: hidden;
+  width: 100%;
+}
+
+.tech-slider-track {
+  display: flex;
+  gap: 18px;
+  transition: transform 0.5s ease;
+  will-change: transform;
+}
+
+.tech-item {
+  flex: 0 0 150px;
+  height: 130px;
+
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+
+  gap: 12px;
+
+  text-decoration: none;
+  color: inherit;
+
+  border: 1px solid rgba(128, 128, 128, 0.25);
+  border-radius: 14px;
+
+  background: rgba(255, 255, 255, 0.04);
+
+  transition:
+    transform 0.25s ease,
+    border-color 0.25s ease,
+    background 0.25s ease,
+    box-shadow 0.25s ease;
+}
+
+.tech-item:hover {
+  transform: translateY(-5px);
+  border-color: rgba(0, 150, 255, 0.6);
+  background: rgba(0, 150, 255, 0.08);
+  box-shadow: 0 8px 25px rgba(0, 0, 0, 0.15);
+}
+
+.tech-item img {
+  width: 52px;
+  height: 52px;
+  object-fit: contain;
+}
+
+.tech-item span {
+  font-size: 14px;
+  font-weight: 600;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.slider-btn {
+  flex: 0 0 42px;
+  width: 42px;
+  height: 42px;
+
+  border: none;
+  border-radius: 50%;
+
+  background: rgba(0, 0, 0, 0.7);
+  color: white;
+
+  font-size: 22px;
+  cursor: pointer;
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  z-index: 2;
+
+  transition:
+    background 0.2s ease,
+    transform 0.2s ease;
+}
+
+.slider-btn:hover {
+  background: rgba(0, 120, 255, 0.9);
+  transform: scale(1.08);
+}
+
+@media (max-width: 900px) {
+  .tech-item {
+    flex-basis: 135px;
+    height: 120px;
+  }
+
+  .tech-item img {
+    width: 46px;
+    height: 46px;
+  }
+}
+
+@media (max-width: 600px) {
+  .tech-slider {
+    gap: 6px;
+  }
+
+  .slider-btn {
+    flex: 0 0 34px;
+    width: 34px;
+    height: 34px;
+    font-size: 18px;
+  }
+
+  .tech-item {
+    flex-basis: 115px;
+    height: 110px;
+  }
+
+  .tech-item img {
+    width: 40px;
+    height: 40px;
+  }
+
+  .tech-item span {
+    font-size: 12px;
+  }
+}
+</style>
+  
+<script>
+document.addEventListener("DOMContentLoaded", function () {
+
+  const slider = document.getElementById("technology-slider");
+
+  if (!slider) {
+    console.error("Technology slider not found.");
+    return;
+  }
+
+  const track = slider.querySelector(".tech-slider-track");
+  const windowEl = slider.querySelector(".tech-slider-window");
+  const nextButton = slider.querySelector(".tech-slider-next");
+  const prevButton = slider.querySelector(".tech-slider-prev");
+  const items = slider.querySelectorAll(".tech-item");
+
+  if (!track || !windowEl || !nextButton || !prevButton || !items.length) {
+    console.error("Technology slider elements are missing.");
+    return;
+  }
+
+  let currentPosition = 0;
+  let autoSlideTimer = null;
+
+  function getItemStep() {
+    const item = items[0];
+
+    const itemWidth = item.getBoundingClientRect().width;
+
+    const styles = window.getComputedStyle(track);
+    const gap = parseFloat(styles.columnGap || styles.gap) || 0;
+
+    return itemWidth + gap;
+  }
+
+  function getVisibleItems() {
+    const step = getItemStep();
+
+    if (!step) {
+      return 1;
+    }
+
+    return Math.max(
+      1,
+      Math.floor(windowEl.clientWidth / step)
+    );
+  }
+
+  function getMaxPosition() {
+    return Math.max(
+      0,
+      items.length - getVisibleItems()
+    );
+  }
+
+  function updateSlider() {
+
+    const maxPosition = getMaxPosition();
+
+    // Keep position inside valid range
+    currentPosition = Math.max(
+      0,
+      Math.min(currentPosition, maxPosition)
+    );
+
+    const offset = currentPosition * getItemStep();
+
+    track.style.transform =
+      `translate3d(-${offset}px, 0, 0)`;
+
+    // Disable arrows when there is nowhere else to go
+    prevButton.disabled = currentPosition === 0;
+    nextButton.disabled = currentPosition >= maxPosition;
+  }
+
+  function nextSlide() {
+
+    const maxPosition = getMaxPosition();
+
+    if (currentPosition < maxPosition) {
+      currentPosition++;
+    } else {
+      // Loop back to beginning
+      currentPosition = 0;
+    }
+
+    updateSlider();
+  }
+
+  function previousSlide() {
+
+    const maxPosition = getMaxPosition();
+
+    if (currentPosition > 0) {
+      currentPosition--;
+    } else {
+      // Loop to the end
+      currentPosition = maxPosition;
+    }
+
+    updateSlider();
+  }
+
+  function startAutoSlide() {
+
+    stopAutoSlide();
+
+    autoSlideTimer = setInterval(function () {
+      nextSlide();
+    }, 3000);
+  }
+
+  function stopAutoSlide() {
+
+    if (autoSlideTimer) {
+      clearInterval(autoSlideTimer);
+      autoSlideTimer = null;
+    }
+  }
+
+  /*
+   * Arrow controls
+   */
+  nextButton.addEventListener("click", function (event) {
+
+    event.preventDefault();
+
+    nextSlide();
+
+    startAutoSlide();
+  });
+
+  prevButton.addEventListener("click", function (event) {
+
+    event.preventDefault();
+
+    previousSlide();
+
+    startAutoSlide();
+  });
+
+  /*
+   * Pause automatic scrolling while hovering
+   */
+  slider.addEventListener("mouseenter", function () {
+    stopAutoSlide();
+  });
+
+  slider.addEventListener("mouseleave", function () {
+    startAutoSlide();
+  });
+
+  /*
+   * Recalculate when browser is resized
+   */
+  window.addEventListener("resize", function () {
+    updateSlider();
+  });
+
+  /*
+   * Initialize
+   */
+  updateSlider();
+  startAutoSlide();
+
+});
+</script>
+  
   <nav>
-    <a href="#overview">Overview</a>
+    <a href="#overview">Home</a>
     <a href="#services">Services</a>
-    <a href="#docs">Documentation</a>
+    <a href="#docs">Projects</a>
   </nav>
 
   <main>
     <section class="hero">
       <div class="hero-badge">🛡️ Secure Access Enabled</div>
       <h2>Your Security Dashboard</h2>
-      <p>Access your home security infrastructure through Cloudflare Zero Trust. All services are protected by advanced security policies and authentication.</p>
+      <div class="tech-slider" id="technology-slider">
+      
+        <button
+          type="button"
+          class="slider-btn tech-slider-prev"
+          aria-label="Previous technologies"
+        >
+          &#10094;
+        </button>
+      
+        <div class="tech-slider-window">
+          <div class="tech-slider-track">
+    
+          <!-- Cloudflare -->
+          <a class="tech-item" href="https://www.cloudflare.com/" target="_blank" rel="noopener noreferrer">
+            <img src="https://api.iconify.design/simple-icons:cloudflare.svg" alt="Cloudflare">
+            <span>Cloudflare</span>
+          </a>
+    
+          <!-- Docker -->
+          <a class="tech-item" href="https://www.docker.com/" target="_blank" rel="noopener noreferrer">
+            <img src="https://api.iconify.design/simple-icons:docker.svg" alt="Docker">
+            <span>Docker</span>
+          </a>
+    
+          <!-- Suricata -->
+          <a class="tech-item" href="https://suricata.io/" target="_blank" rel="noopener noreferrer">
+            <img src="https://suricata.io/wp-content/uploads/2023/09/Logo-Suricata-vert-R.jpg" alt="Suricata">
+            <span>Suricata</span>
+          </a>
+    
+          <!-- AWS -->
+          <a class="tech-item" href="https://aws.amazon.com/" target="_blank" rel="noopener noreferrer">
+            <img src="https://api.iconify.design/simple-icons:amazonaws.svg" alt="AWS">
+            <span>AWS</span>
+          </a>
+    
+          <!-- OpenVAS / Greenbone -->
+          <a class="tech-item" href="https://www.greenbone.net/" target="_blank" rel="noopener noreferrer">
+            <img src="https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/openvas.svg" alt="OpenVAS">
+            <span>OpenVAS</span>
+          </a>
+    
+          <!-- Ansible -->
+          <a class="tech-item" href="https://www.ansible.com/" target="_blank" rel="noopener noreferrer">
+            <img src="https://api.iconify.design/simple-icons:ansible.svg" alt="Ansible">
+            <span>Ansible</span>
+          </a>
+    
+          <!-- Windows -->
+          <a class="tech-item" href="https://www.microsoft.com/windows/" target="_blank" rel="noopener noreferrer">
+            <img src="https://api.iconify.design/simple-icons:windows.svg" alt="Windows">
+            <span>Windows OS</span>
+          </a>
+    
+          <!-- Linux -->
+          <a class="tech-item" href="https://www.linux.org/" target="_blank" rel="noopener noreferrer">
+            <img src="https://api.iconify.design/simple-icons:linux.svg" alt="Linux">
+            <span>Linux OS</span>
+          </a>
+    
+          <!-- Caddy -->
+          <a class="tech-item" href="https://caddyserver.com/" target="_blank" rel="noopener noreferrer">
+            <img src="https://api.iconify.design/simple-icons:caddy.svg" alt="Caddy">
+            <span>Caddy</span>
+          </a>
+    
+          <!-- Fluent Bit -->
+          <a class="tech-item" href="https://fluentbit.io/" target="_blank" rel="noopener noreferrer">
+            <img src="https://api.iconify.design/simple-icons:fluentbit.svg" alt="Fluent Bit">
+            <span>Fluent Bit</span>
+          </a>
+    
+          <!-- Ollama -->
+          <a class="tech-item" href="https://ollama.com/" target="_blank" rel="noopener noreferrer">
+            <img src="https://api.iconify.design/simple-icons:ollama.svg" alt="Ollama">
+            <span>Ollama</span>
+          </a>
+           </div>
+      </div>
+    
+      <button
+        type="button"
+        class="slider-btn tech-slider-next"
+        aria-label="Next technologies"
+      >
+        &#10095;
+      </button>
+    
+    </div>
     </section>
-
+    
     <section class="services-section" id="services">
       <h3>Available Services</h3>
       <div class="services-grid">
@@ -288,11 +717,11 @@
           <span class="service-link">Open SSO Portal</span>
         </a>
 
-        <!-- Agent Check Service -->
+        <!-- Browser Agent Check Service -->
         <a href="agent-check.html" class="service-card">
           <div class="service-icon">✓</div>
-          <h4>Agent Check</h4>
-          <p>Monitor and verify the status of all security agents deployed across your network</p>
+          <h4>Browser Agent Check</h4>
+          <p>Check and verify the browser agent on your device.</p>
           <span class="service-link">Check Agents</span>
         </a>
 
@@ -300,21 +729,30 @@
     </section>
 
     <section class="services-section" id="docs">
-      <h3>Documentation</h3>
+      <h3>Ongoing Projects</h3>
       <div class="services-grid">
         <a href="https://github.com/kbongcawel-viatrm/home-security.uk/blob/main/README.md" class="service-card">
-          <div class="service-icon">📖</div>
-          <h4>Repository README</h4>
-          <p>Read the project overview and setup documentation.</p>
-          <span class="service-link">View README</span>
+          <h4>home-security.uk: Comprehensive home security</h4>
+          <img align=center width="550" height="210" alt="glowing_aura_banner_1900x700_10mb" src="https://github.com/user-attachments/assets/5b8ceadd-6fc3-48f7-a1db-8b7c8b131332" />
+          <p>A comprehensive home security stack aimed at implementing file integrity monitoring (FIM), alerting, intrusion prevention/detection systems (IPS/IDS), log assessment and forensics, log aggregation visualization, and response and mitigation steps for possible malicious attacks.</p>
+          <span class="service-link">Read more</span>
+        </a>
+      </div>
+            <div class="services-grid">
+        <a href="https://home-security.uk/" class="service-card">
+          <h4>Cloudflare: Zero Trust Model</h4>
+          <img align=center width="550" height="210" alt="#" src="https://raw.githubusercontent.com/kbongcawel-viatrm/home-security.uk/refs/heads/main/docs/zero-trust.png" />
+          <p>Think of your organization like a home. Traditional security approaches focus on building a strong perimeter — securing the doors and walls, then trusting everything inside. But in today’s world, users, devices, applications, and data are constantly moving. A stronger approach is to follow a Zero Trust security model: never assume trust, always verify.</p>
+          <span class="service-link">Read more</span>
         </a>
       </div>
     </section>
   </main>
 
   <footer>
-    <p>© 2026 Home Security Stack - Powered by Cloudflare Zero Trust</p>
-    <p>All services are protected by advanced security policies</p>
+    <p>© 2026 home-security.uk</p>
+    <p>+639350338339
+    <p>dummykevin08@gmail.com</p>
   </footer>
 </body>
 </html>
