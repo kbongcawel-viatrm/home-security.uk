@@ -1,0 +1,4 @@
+interface:
+  display_name: "Sword Agent"
+  short_description: "Manage defensive controls and response plans"
+  default_prompt: "Use $sword-agent for The Sword module: Suricata rules, Ansible hardening and response plans, and Windows logging controls."

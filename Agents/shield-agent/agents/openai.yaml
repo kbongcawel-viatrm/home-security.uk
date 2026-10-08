@@ -1,0 +1,4 @@
+interface:
+  display_name: "Shield Agent"
+  short_description: "Coordinate investigation and controlled response"
+  default_prompt: "Use $shield-agent for The Shield module: secrets, endpoint investigation, vulnerability assessment, and approved response automation."

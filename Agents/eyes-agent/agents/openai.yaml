@@ -1,0 +1,4 @@
+interface:
+  display_name: "Eyes Agent"
+  short_description: "Maintain security telemetry and visibility"
+  default_prompt: "Use $eyes-agent for The Eyes module: log collection, Graylog investigation, TheHive visibility, telemetry flows, and Uptime Kuma monitors."

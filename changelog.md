@@ -2,6 +2,7 @@
 
 | Commit Message | Branch | Hash | Date |
 | --- | --- | --- | --- |
+| Group AI agent skills under Agents and update module references | main | — | 2026-10-08 |
 | Add production artifact load workflow and simplify dev build flow | codex-artifact-workflows-from-change | 336c995 | 2026-05-03 23:36:06 +08:00 |
 | Add Ghost upgrade governance | dev | 5db714c | 2026-05-03 |
 | Wire Harbor cache into workflows | dev | 9fecd21 | 2026-05-03 |

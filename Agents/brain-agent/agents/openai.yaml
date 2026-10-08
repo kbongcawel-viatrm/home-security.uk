@@ -1,0 +1,4 @@
+interface:
+  display_name: "Brain Agent"
+  short_description: "Manage endpoint detection and alert correlation"
+  default_prompt: "Use $brain-agent for The Brain module: Wazuh and OSSEC telemetry, detection rules, index health, and alert integrations."
