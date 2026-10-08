@@ -437,105 +437,171 @@
 </style>
   
 <script>
-const track = document.querySelector(".tech-slider-track");
-const nextButton = document.querySelector(".next");
-const prevButton = document.querySelector(".prev");
-const slider = document.querySelector(".tech-slider");
+document.addEventListener("DOMContentLoaded", function () {
 
-let position = 0;
-let autoSlide;
+  const slider = document.getElementById("technology-slider");
 
-function getStep() {
-  const item = document.querySelector(".tech-item");
+  if (!slider) {
+    console.error("Technology slider not found.");
+    return;
+  }
 
-  if (!item) return 0;
+  const track = slider.querySelector(".tech-slider-track");
+  const windowEl = slider.querySelector(".tech-slider-window");
+  const nextButton = slider.querySelector(".tech-slider-next");
+  const prevButton = slider.querySelector(".tech-slider-prev");
+  const items = slider.querySelectorAll(".tech-item");
 
-  const gap = parseFloat(
-    getComputedStyle(track).gap
-  );
+  if (!track || !windowEl || !nextButton || !prevButton || !items.length) {
+    console.error("Technology slider elements are missing.");
+    return;
+  }
 
-  return item.offsetWidth + gap;
-}
+  let currentPosition = 0;
+  let autoSlideTimer = null;
 
-function getVisibleItems() {
-  const windowWidth =
-    document.querySelector(".tech-slider-window").offsetWidth;
+  function getItemStep() {
+    const item = items[0];
 
-  return Math.max(
-    1,
-    Math.floor(windowWidth / getStep())
-  );
-}
+    const itemWidth = item.getBoundingClientRect().width;
 
-function getMaxPosition() {
-  const items =
-    document.querySelectorAll(".tech-item").length;
+    const styles = window.getComputedStyle(track);
+    const gap = parseFloat(styles.columnGap || styles.gap) || 0;
 
-  const visible = getVisibleItems();
+    return itemWidth + gap;
+  }
 
-  return Math.max(0, items - visible);
-}
+  function getVisibleItems() {
+    const step = getItemStep();
 
-function updateSlider() {
-  track.style.transform =
-    `translateX(-${position * getStep()}px)`;
-}
+    if (!step) {
+      return 1;
+    }
 
-function nextSlide() {
-  const maxPosition = getMaxPosition();
+    return Math.max(
+      1,
+      Math.floor(windowEl.clientWidth / step)
+    );
+  }
 
-  position =
-    position >= maxPosition
-      ? 0
-      : position + 1;
+  function getMaxPosition() {
+    return Math.max(
+      0,
+      items.length - getVisibleItems()
+    );
+  }
 
+  function updateSlider() {
+
+    const maxPosition = getMaxPosition();
+
+    // Keep position inside valid range
+    currentPosition = Math.max(
+      0,
+      Math.min(currentPosition, maxPosition)
+    );
+
+    const offset = currentPosition * getItemStep();
+
+    track.style.transform =
+      `translate3d(-${offset}px, 0, 0)`;
+
+    // Disable arrows when there is nowhere else to go
+    prevButton.disabled = currentPosition === 0;
+    nextButton.disabled = currentPosition >= maxPosition;
+  }
+
+  function nextSlide() {
+
+    const maxPosition = getMaxPosition();
+
+    if (currentPosition < maxPosition) {
+      currentPosition++;
+    } else {
+      // Loop back to beginning
+      currentPosition = 0;
+    }
+
+    updateSlider();
+  }
+
+  function previousSlide() {
+
+    const maxPosition = getMaxPosition();
+
+    if (currentPosition > 0) {
+      currentPosition--;
+    } else {
+      // Loop to the end
+      currentPosition = maxPosition;
+    }
+
+    updateSlider();
+  }
+
+  function startAutoSlide() {
+
+    stopAutoSlide();
+
+    autoSlideTimer = setInterval(function () {
+      nextSlide();
+    }, 3000);
+  }
+
+  function stopAutoSlide() {
+
+    if (autoSlideTimer) {
+      clearInterval(autoSlideTimer);
+      autoSlideTimer = null;
+    }
+  }
+
+  /*
+   * Arrow controls
+   */
+  nextButton.addEventListener("click", function (event) {
+
+    event.preventDefault();
+
+    nextSlide();
+
+    startAutoSlide();
+  });
+
+  prevButton.addEventListener("click", function (event) {
+
+    event.preventDefault();
+
+    previousSlide();
+
+    startAutoSlide();
+  });
+
+  /*
+   * Pause automatic scrolling while hovering
+   */
+  slider.addEventListener("mouseenter", function () {
+    stopAutoSlide();
+  });
+
+  slider.addEventListener("mouseleave", function () {
+    startAutoSlide();
+  });
+
+  /*
+   * Recalculate when browser is resized
+   */
+  window.addEventListener("resize", function () {
+    updateSlider();
+  });
+
+  /*
+   * Initialize
+   */
   updateSlider();
-}
-
-function prevSlide() {
-  const maxPosition = getMaxPosition();
-
-  position =
-    position <= 0
-      ? maxPosition
-      : position - 1;
-
-  updateSlider();
-}
-
-function startAutoSlide() {
-  clearInterval(autoSlide);
-  autoSlide = setInterval(nextSlide, 3000);
-}
-
-nextButton.addEventListener("click", () => {
-  nextSlide();
   startAutoSlide();
+
 });
-
-prevButton.addEventListener("click", () => {
-  prevSlide();
-  startAutoSlide();
-});
-
-slider.addEventListener("mouseenter", () => {
-  clearInterval(autoSlide);
-});
-
-slider.addEventListener("mouseleave", () => {
-  startAutoSlide();
-});
-
-window.addEventListener("resize", () => {
-  position = Math.min(
-    position,
-    getMaxPosition()
-  );
-
-  updateSlider();
-});
-
-startAutoSlide();
 </script>
   
   <nav>
@@ -548,11 +614,18 @@ startAutoSlide();
     <section class="hero">
       <div class="hero-badge">🛡️ Secure Access Enabled</div>
       <h2>Your Security Dashboard</h2>
-      <div class="tech-slider">
-      <button class="slider-btn prev" aria-label="Previous">&#10094;</button>
-    
-      <div class="tech-slider-window">
-        <div class="tech-slider-track">
+      <div class="tech-slider" id="technology-slider">
+      
+        <button
+          type="button"
+          class="slider-btn tech-slider-prev"
+          aria-label="Previous technologies"
+        >
+          &#10094;
+        </button>
+      
+        <div class="tech-slider-window">
+          <div class="tech-slider-track">
     
           <!-- Cloudflare -->
           <a class="tech-item" href="https://www.cloudflare.com/" target="_blank" rel="noopener noreferrer">
@@ -619,11 +692,17 @@ startAutoSlide();
             <img src="https://api.iconify.design/simple-icons:ollama.svg" alt="Ollama">
             <span>Ollama</span>
           </a>
-    
-        </div>
+           </div>
       </div>
     
-      <button class="slider-btn next" aria-label="Next">&#10095;</button>
+      <button
+        type="button"
+        class="slider-btn tech-slider-next"
+        aria-label="Next technologies"
+      >
+        &#10095;
+      </button>
+    
     </div>
     </section>
     
