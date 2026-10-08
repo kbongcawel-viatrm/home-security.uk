@@ -9,6 +9,7 @@ APPLY_SYSCTL="${APPLY_SYSCTL:-true}"
 WAIT_HEALTH="${WAIT_HEALTH:-true}"
 HEALTH_TIMEOUT_SECONDS="${HEALTH_TIMEOUT_SECONDS:-900}"
 USE_VAULT_ENV="${USE_VAULT_ENV:-true}"
+CONTAINER_ENGINE="${CONTAINER_ENGINE:-}"
 
 log() {
   printf '%s %s\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "$*"
@@ -23,7 +24,26 @@ compose() {
     env_args="${env_args} --env-file .env.vault"
   fi
   # shellcheck disable=SC2086
-  docker compose ${env_args} -f "${COMPOSE_FILE}" "$@"
+  "${CONTAINER_ENGINE}" compose ${env_args} -f "${COMPOSE_FILE}" "$@"
+}
+
+select_container_engine() {
+  if [ -n "${CONTAINER_ENGINE}" ]; then
+    require_command "${CONTAINER_ENGINE}"
+    if ! "${CONTAINER_ENGINE}" compose version >/dev/null 2>&1; then
+      echo "${CONTAINER_ENGINE} compose is unavailable; install/configure its Compose provider" >&2
+      exit 127
+    fi
+  elif command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1; then
+    CONTAINER_ENGINE=docker
+  elif command -v podman >/dev/null 2>&1 && podman compose version >/dev/null 2>&1; then
+    CONTAINER_ENGINE=podman
+  else
+    echo "Missing container engine: install Docker Compose or Podman with a Compose provider" >&2
+    exit 127
+  fi
+  export CONTAINER_ENGINE
+  log "using container engine: ${CONTAINER_ENGINE}"
 }
 
 profile_args() {
@@ -113,33 +133,24 @@ wait_for_health() {
 }
 
 main() {
-  require_command docker
+  select_container_engine
   prepare_workspace
   render_vault_env
   apply_sysctl
-
-  export DOCKER_BUILDKIT="${DOCKER_BUILDKIT:-1}"
-  export COMPOSE_DOCKER_CLI_BUILD="${COMPOSE_DOCKER_CLI_BUILD:-1}"
 
   log "validating compose profiles: ${PROFILES}"
   compose $(profile_args) config >/dev/null
 
   if [ "${PULL_IMAGES}" = "true" ]; then
     log "pulling images"
-    require_command python3
-    if ! python3 "scripts/prewarm-registry-cache.py" --compose-file "${COMPOSE_FILE}" --profiles "${PROFILES}" --targets-file "The Shield/scanner/targets.txt"; then
-      log "one or more image pulls failed; review the pull log above"
-      exit 1
-    fi
+    compose $(profile_args) pull
   fi
 
   log "starting services"
-  compose $(profile_args) up -d --build --pull never --remove-orphans
+  compose $(profile_args) up -d --build --remove-orphans
   compose $(profile_args) ps
   wait_for_health
   log "startup complete"
 }
 
 main "$@"
-
-

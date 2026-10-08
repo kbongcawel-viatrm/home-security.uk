@@ -20,6 +20,10 @@ To gracefully stop everything:
 sh scripts/killswitch.sh
 ```
 
+The scripts use Docker Compose when Docker is installed, and fall back to Podman when Docker is unavailable. For Podman, install `podman` and a Compose provider supported by `podman compose` (such as `podman-compose`). Select it explicitly with `CONTAINER_ENGINE=podman sh scripts/start-stack.sh`; the same setting works with `scripts/killswitch.sh`. Commands below use Docker syntax; replace `docker` with `podman` when operating a Podman stack.
+
+Some services that control other containers (including Portainer, Shuffle, and the container health exporter) connect to `/var/run/docker.sock`. They need a Docker-compatible API socket and may not work with a default Podman setup. Podman also differs in host networking, device/capability handling, and rootless port binding; review those services and host requirements before enabling their profiles.
+
 ## Available Profiles
 
 You can run specific components by passing profiles to the startup script:
