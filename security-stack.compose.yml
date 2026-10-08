@@ -55,7 +55,7 @@ services:
     build:
       context: "./The Hands/FQDN proxy - Caddy"
       dockerfile: Dockerfile
-    image: hq-sec/caddy-crowdsec
+    image: localhost/hq-sec/caddy-crowdsec
     container_name: fqdn-proxy
     profiles: ["dns", "all"]
     environment:
@@ -1284,7 +1284,7 @@ services:
     build:
       context: "./The Eyes/nmap"
       dockerfile: Dockerfile
-    image: hq-sec-stack-nmap-scanner
+    image: localhost/hq-sec-stack-nmap-scanner
     container_name: nmap-scanner
     profiles: ["network", "all"]
     command: ["/usr/local/bin/scan.sh"]
@@ -1300,7 +1300,7 @@ services:
     build:
       context: "./The Eyes/wireshark"
       dockerfile: Dockerfile
-    image: hq-sec-stack-wireshark-scanner
+    image: localhost/hq-sec-stack-wireshark-scanner
     container_name: wireshark-scanner
     profiles: ["network", "all"]
     network_mode: host
