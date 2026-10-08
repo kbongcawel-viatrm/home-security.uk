@@ -2,6 +2,19 @@
 
 The repository is organized by SOC function. Some services have secondary roles, so their secondary category folder contains a pointer `README.md` instead of duplicated config.
 
+## Module Agents
+
+Module-wide operating guidance lives in the matching skill package. Load the narrower service skill as well when a task is specific to one integration.
+
+| Module | Agent skill | Main operating focus |
+| --- | --- | --- |
+| The Brain | [`brain-agent`](../skills/brain-agent/SKILL.md) | Wazuh and OSSEC telemetry, rules, enrollment boundaries, and alert correlation |
+| The Eyes | [`eyes-agent`](../skills/eyes-agent/SKILL.md) | Log and telemetry flow, investigation context, monitoring, and authorized capture/scanning |
+| The Ghost | [`ghost-agent`](../skills/ghost-agent/SKILL.md) | Evidence-bounded cross-pillar assessment and human-reviewed directives |
+| The Hands | [`hands-agent`](../skills/hands-agent/SKILL.md) | DNS, proxy, reports, backups, and recovery safety |
+| The Shield | [`shield-agent`](../skills/shield-agent/SKILL.md) | Secrets, endpoint investigation, vulnerability assessment, and controlled response |
+| The Sword | [`sword-agent`](../skills/sword-agent/SKILL.md) | Defensive rules, endpoint controls, and reviewed response execution |
+
 ## 1. Alert, Visualization & SIEM: The Brain
 
 Path: `The Brain/`

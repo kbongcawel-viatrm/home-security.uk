@@ -1,0 +1,4 @@
+interface:
+  display_name: "Hands Agent"
+  short_description: "Operate shared support and recovery services"
+  default_prompt: "Use $hands-agent for The Hands module: local DNS, Caddy routes, backup and restore workflows, and report hosting."
