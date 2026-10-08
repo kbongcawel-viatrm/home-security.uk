@@ -3,6 +3,7 @@ set -eu
 
 COMPOSE_FILE="${COMPOSE_FILE:-security-stack.compose.yml}"
 PROJECT_ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
+PROJECT_NAME="${COMPOSE_PROJECT_NAME:-$(basename "${PROJECT_ROOT}" | tr '[:upper:]' '[:lower:]' | tr -cd 'a-z0-9_-')}"
 PROFILES="${SECSTACK_PROFILES:-all}"
 TIMEOUT_SECONDS="${KILLSWITCH_TIMEOUT_SECONDS:-60}"
 MODE="${1:-stop}"
@@ -43,6 +44,42 @@ profile_args() {
   done
 }
 
+project_container_ids() {
+  label="$1"
+  "${CONTAINER_ENGINE}" ps -q --filter "label=${label}=${PROJECT_NAME}"
+}
+
+stop_project_containers() {
+  found=false
+  for label in com.docker.compose.project io.podman.compose.project; do
+    containers="$(project_container_ids "${label}")"
+    if [ -n "${containers}" ]; then
+      found=true
+      # The output contains only container IDs, so shell word splitting is safe.
+      # shellcheck disable=SC2086
+      set -- ${containers}
+      log "stopping ${#} running containers labeled ${label}=${PROJECT_NAME}"
+      "${CONTAINER_ENGINE}" stop --time "${TIMEOUT_SECONDS}" "$@"
+    fi
+  done
+  if [ "${found}" = false ]; then
+    log "no running containers found for project ${PROJECT_NAME}"
+  fi
+}
+
+remove_project_containers() {
+  for label in com.docker.compose.project io.podman.compose.project; do
+    containers="$("${CONTAINER_ENGINE}" ps -aq --filter "label=${label}=${PROJECT_NAME}")"
+    if [ -n "${containers}" ]; then
+      # The output contains only container IDs, so shell word splitting is safe.
+      # shellcheck disable=SC2086
+      set -- ${containers}
+      log "removing ${#} containers labeled ${label}=${PROJECT_NAME}"
+      "${CONTAINER_ENGINE}" rm --force "$@"
+    fi
+  done
+}
+
 usage() {
   cat <<'USAGE'
 usage: scripts/killswitch.sh [stop|down|pause]
@@ -55,6 +92,7 @@ Modes:
 Environment:
   SECSTACK_PROFILES="all"             Profiles to target.
   KILLSWITCH_TIMEOUT_SECONDS="60"     Graceful stop timeout.
+  COMPOSE_PROJECT_NAME="..."          Project label value (defaults to the repository directory name).
   COMPOSE_FILE="security-stack.compose.yml"
   CONTAINER_ENGINE="docker", "podman", or an explicit compatible engine (auto-selects Docker, then Podman).
 USAGE
@@ -68,14 +106,17 @@ main() {
 
   select_container_engine
   cd "${PROJECT_ROOT}"
-  log "killswitch mode=${MODE} profiles=${PROFILES}"
+  log "killswitch mode=${MODE} profiles=${PROFILES} project=${PROJECT_NAME}"
 
   case "${MODE}" in
     stop)
-      compose $(profile_args) stop -t "${TIMEOUT_SECONDS}"
+      stop_project_containers
       ;;
     down)
-      compose $(profile_args) down --remove-orphans --timeout "${TIMEOUT_SECONDS}"
+      if ! compose $(profile_args) down --remove-orphans --timeout "${TIMEOUT_SECONDS}"; then
+        log "Compose down failed; removing containers by project label"
+      fi
+      remove_project_containers
       ;;
     pause)
       compose $(profile_args) pause || true

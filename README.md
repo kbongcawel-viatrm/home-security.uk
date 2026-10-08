@@ -44,11 +44,13 @@ sh scripts/allow-firewall-ports.sh
 
 The helper uses `sudo firewall-cmd`, targets the default zone, and adds permanent rules. Set `FIREWALL_ZONE=public` (or another zone) to choose a zone. Review `.env` bind addresses and port overrides first; update the helper's port list if you change the default host ports. Firewall rules do not change the stack's default loopback-only bindings.
 
-To gracefully stop the stack, run:
+To gracefully stop every running container in this Compose project, regardless of profile, run:
 
 ```bash
 sh scripts/killswitch.sh
 ```
+
+The stop mode targets the Compose project labels used by Docker Compose and Podman Compose. It preserves containers and named volumes. Use `sh scripts/killswitch.sh down` to remove the project's containers and networks while preserving named volumes. If you set `COMPOSE_PROJECT_NAME` when starting the stack, set the same value when stopping it.
 
 The scripts use Docker Compose when Docker is installed, and fall back to Podman when Docker is unavailable. The same `CONTAINER_ENGINE` setting works with `scripts/killswitch.sh`. The startup script uses journald logging with Podman because Podman does not support Docker's GELF logging driver. Commands below use Docker syntax; replace `docker` with `podman` when operating a Podman stack.
 
