@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Home Security Portal - Cloudflare Zero Trust</title>
+  <title>Home Security Dashboard - Cloudflare Zero Trust</title>
   <style>
     :root {
       --primary-black: #000000;
@@ -260,7 +260,7 @@
 </head>
 <body>
   <header>
-    <h1>🔐 Home Security Portal</h1>
+    <h1>🔐 Home Security Dashboard</h1>
     <p>Cloudflare Zero Trust Network Access</p>
   </header>
 
@@ -280,14 +280,6 @@
     <section class="services-section" id="services">
       <h3>Available Services</h3>
       <div class="services-grid">
-        <!-- Dashboard Service -->
-        <a href="index.html" class="service-card">
-          <div class="service-icon">📊</div>
-          <h4>Dashboard</h4>
-          <p>Central monitoring and reporting dashboard for your security infrastructure</p>
-          <span class="service-link">Access Dashboard</span>
-        </a>
-
         <!-- SSO Service -->
         <a href="https://home-security-xyz.cloudflareaccess.com/cdn-cgi/access/sso/saml/970df012d694355281aba67c6f87ff96330ad6909167e8d73b0c91397273228f" class="service-card">
           <div class="service-icon">🔑</div>
@@ -304,12 +296,17 @@
           <span class="service-link">Check Agents</span>
         </a>
 
-        <!-- Browser Service -->
-        <a href="https://browser.home-security.uk" class="service-card">
-          <div class="service-icon">🌐</div>
-          <h4>Remote Browser</h4>
-          <p>Isolated browser environment for secure web access and testing</p>
-          <span class="service-link">Open Browser</span>
+      </div>
+    </section>
+
+    <section class="services-section" id="docs">
+      <h3>Documentation</h3>
+      <div class="services-grid">
+        <a href="https://github.com/kbongcawel-viatrm/home-security.uk/blob/main/README.md" class="service-card">
+          <div class="service-icon">📖</div>
+          <h4>Repository README</h4>
+          <p>Read the project overview and setup documentation.</p>
+          <span class="service-link">View README</span>
         </a>
       </div>
     </section>
