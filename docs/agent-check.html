@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Agent Check - Device Detection</title>
+    <title>User Agent Check</title>
     <style>
         * {
             margin: 0;
@@ -12,9 +12,8 @@
         }
 
         body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-            background: #0f172a;
-            color: #e2e8f0;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             min-height: 100vh;
             display: flex;
             align-items: center;
@@ -23,314 +22,141 @@
         }
 
         .container {
-            width: 100%;
+            background: white;
+            border-radius: 10px;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+            padding: 40px;
             max-width: 600px;
-        }
-
-        .card {
-            background: rgba(30, 41, 59, 0.6);
-            border: 1px solid rgba(148, 163, 184, 0.2);
-            border-radius: 16px;
-            padding: 48px 32px;
-            backdrop-filter: blur(10px);
-            text-align: center;
+            width: 100%;
         }
 
         h1 {
-            font-size: 1.8em;
-            margin-bottom: 12px;
-            background: linear-gradient(135deg, #60a5fa 0%, #3b82f6 100%);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            background-clip: text;
+            color: #333;
+            margin-bottom: 30px;
+            text-align: center;
+            font-size: 2em;
         }
 
-        .subtitle {
-            color: #94a3b8;
-            margin-bottom: 40px;
-            font-size: 0.95em;
+        .link-section {
+            margin-bottom: 25px;
         }
 
-        .button-group {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 16px;
-            margin-bottom: 40px;
-        }
-
-        button {
-            padding: 16px 24px;
-            border: 1px solid rgba(148, 163, 184, 0.2);
-            border-radius: 10px;
-            background: rgba(59, 130, 246, 0.1);
-            color: #60a5fa;
-            font-size: 1em;
+        .link-section a {
+            display: block;
+            padding: 15px 20px;
+            margin-bottom: 10px;
+            text-decoration: none;
+            color: white;
+            border-radius: 5px;
             font-weight: 600;
             cursor: pointer;
             transition: all 0.3s ease;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 10px;
-        }
-
-        button:hover {
-            background: rgba(59, 130, 246, 0.2);
-            border-color: rgba(96, 165, 250, 0.5);
-            transform: translateY(-2px);
-            box-shadow: 0 8px 16px rgba(59, 130, 246, 0.2);
-        }
-
-        button:active {
-            transform: translateY(0);
-        }
-
-        .icon {
-            font-size: 1.3em;
-        }
-
-        .user-agent-section {
-            margin-top: 40px;
-            padding-top: 40px;
-            border-top: 1px solid rgba(148, 163, 184, 0.2);
-        }
-
-        .user-agent-label {
-            color: #94a3b8;
-            font-size: 0.85em;
-            text-transform: uppercase;
-            letter-spacing: 1px;
-            margin-bottom: 12px;
-            display: block;
-        }
-
-        .user-agent-display {
-            background: rgba(15, 23, 42, 0.8);
-            border: 1px solid rgba(148, 163, 184, 0.2);
-            border-radius: 8px;
-            padding: 16px;
-            font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
-            font-size: 0.85em;
-            color: #60a5fa;
-            word-break: break-all;
-            text-align: left;
-            max-height: 200px;
-            overflow-y: auto;
-            line-height: 1.5;
-        }
-
-        .user-agent-display.empty {
-            color: #64748b;
             text-align: center;
-            font-style: italic;
+            font-size: 1.1em;
         }
 
-        .copy-button {
-            margin-top: 12px;
-            width: 100%;
-            padding: 10px 16px;
+        .android-link {
+            background: linear-gradient(135deg, #3b82f6 0%, #1e40af 100%);
+        }
+
+        .android-link:hover {
+            background: linear-gradient(135deg, #1e40af 0%, #1e3a8a 100%);
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(30, 64, 175, 0.4);
+        }
+
+        .safari-link {
+            background: linear-gradient(135deg, #8b5cf6 0%, #6d28d9 100%);
+        }
+
+        .safari-link:hover {
+            background: linear-gradient(135deg, #6d28d9 0%, #5b21b6 100%);
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(109, 40, 217, 0.4);
+        }
+
+        .result-section {
+            background: #f5f5f5;
+            border-radius: 5px;
+            padding: 20px;
+            margin-top: 30px;
+            border-left: 4px solid #667eea;
+        }
+
+        .result-label {
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 10px;
             font-size: 0.9em;
-            background: rgba(16, 185, 129, 0.1);
-            border: 1px solid rgba(16, 185, 129, 0.3);
-            color: #10b981;
-        }
-
-        .copy-button:hover {
-            background: rgba(16, 185, 129, 0.2);
-            border-color: rgba(16, 185, 129, 0.5);
-        }
-
-        .copy-button.copied {
-            background: rgba(16, 185, 129, 0.3);
-            color: #10b981;
-        }
-
-        .device-info {
-            margin-top: 24px;
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 12px;
-            text-align: left;
-        }
-
-        .info-item {
-            background: rgba(15, 23, 42, 0.8);
-            border: 1px solid rgba(148, 163, 184, 0.2);
-            border-radius: 8px;
-            padding: 12px;
-        }
-
-        .info-label {
-            color: #64748b;
-            font-size: 0.8em;
             text-transform: uppercase;
             letter-spacing: 0.5px;
-            margin-bottom: 4px;
         }
 
-        .info-value {
-            color: #60a5fa;
-            font-weight: 600;
-            font-size: 0.95em;
-            word-break: break-word;
-        }
-
-        .back-link {
-            display: inline-block;
-            margin-top: 40px;
-            color: #60a5fa;
-            text-decoration: none;
+        .result-text {
+            background: white;
+            padding: 12px;
+            border-radius: 4px;
+            color: #555;
+            font-family: 'Courier New', monospace;
             font-size: 0.9em;
-            transition: all 0.3s ease;
+            word-break: break-all;
+            min-height: 60px;
+            border: 1px solid #ddd;
         }
 
-        .back-link:hover {
-            color: #93c5fd;
-            text-decoration: underline;
-        }
-
-        @media (max-width: 600px) {
-            .card {
-                padding: 32px 24px;
-            }
-
-            h1 {
-                font-size: 1.4em;
-            }
-
-            .button-group {
-                grid-template-columns: 1fr;
-            }
-
-            .device-info {
-                grid-template-columns: 1fr;
-            }
+        .last-check {
+            font-size: 0.85em;
+            color: #999;
+            margin-top: 8px;
         }
     </style>
 </head>
 <body>
     <div class="container">
-        <div class="card">
-            <h1>Agent Check</h1>
-            <p class="subtitle">Detect your device and browser information</p>
+        <h1>User Agent Check </h1>
+        
+         <p>
+             This page aims to give information on your browser's user agent.
+             By knowing the user agent, you can confirm consistency with the browser application you are currently using.
+             Added to that, you can confirm details such as existence of webview params.
+             
+         </p>
 
-            <div class="button-group">
-                <button onclick="detectAgent('ios')">
-                    <span class="icon">🍎</span>
-                    <span>iOS</span>
-                </button>
-                <button onclick="detectAgent('android')">
-                    <span class="icon">🤖</span>
-                    <span>Android</span>
-                </button>
-            </div>
+        <div class="link-section">
+            <a href="#" class="android-link" onclick="checkAndroidUserAgent(event)">
+                📱 Check for Android
+            </a>
+            
+            <a href="#" class="safari-link" onclick="checkSafariUserAgent(event)">
+                🧭 Check for Safari
+            </a>
+        </div>
 
-            <div class="user-agent-section">
-                <label class="user-agent-label">Your User Agent</label>
-                <div id="userAgentDisplay" class="user-agent-display empty">
-                    Click iOS or Android button to capture your user agent
-                </div>
-                <button class="copy-button" id="copyButton" onclick="copyUserAgent()" style="display: none;">
-                    📋 Copy User Agent
-                </button>
-            </div>
-
-            <div class="device-info" id="deviceInfo" style="display: none;">
-                <div class="info-item">
-                    <div class="info-label">Browser</div>
-                    <div class="info-value" id="browserInfo">-</div>
-                </div>
-                <div class="info-item">
-                    <div class="info-label">OS</div>
-                    <div class="info-value" id="osInfo">-</div>
-                </div>
-                <div class="info-item">
-                    <div class="info-label">Device</div>
-                    <div class="info-value" id="deviceType">-</div>
-                </div>
-                <div class="info-item">
-                    <div class="info-label">Platform</div>
-                    <div class="info-value" id="platformInfo">-</div>
-                </div>
-            </div>
-
-            <a href="index.html" class="back-link">← Back to Dashboard</a>
+        <div class="result-section">
+            <div class="result-label">Current User Agent</div>
+            <div class="result-text" id="userAgentResult">Click a link above to check your user agent</div>
+            <div class="last-check" id="lastCheck"></div>
         </div>
     </div>
 
     <script>
-        let capturedUserAgent = '';
-
-        function detectAgent(platform) {
+        function checkAndroidUserAgent(event) {
+            event.preventDefault();
             const userAgent = navigator.userAgent;
-            capturedUserAgent = userAgent;
-
-            // Display user agent
-            const display = document.getElementById('userAgentDisplay');
-            display.textContent = userAgent;
-            display.classList.remove('empty');
-
-            // Show copy button
-            const copyBtn = document.getElementById('copyButton');
-            copyBtn.style.display = 'block';
-
-            // Parse and display device info
-            displayDeviceInfo(userAgent, platform);
+            const isAndroid = /Android/i.test(userAgent);
+            
+            document.getElementById('userAgentResult').textContent = userAgent;
+            document.getElementById('lastCheck').textContent = `Android Detected: ${isAndroid ? '✓ Yes' : '✗ No'} - Checked at ${new Date().toLocaleTimeString()}`;
         }
 
-        function displayDeviceInfo(ua, platform) {
-            const deviceInfo = document.getElementById('deviceInfo');
-            deviceInfo.style.display = 'grid';
-
-            // Parse browser
-            let browser = 'Unknown';
-            if (ua.indexOf('Chrome') > -1) browser = 'Chrome';
-            else if (ua.indexOf('Safari') > -1) browser = 'Safari';
-            else if (ua.indexOf('Firefox') > -1) browser = 'Firefox';
-            else if (ua.indexOf('Edge') > -1) browser = 'Edge';
-            else if (ua.indexOf('Opera') > -1) browser = 'Opera';
-
-            // Parse OS
-            let os = 'Unknown';
-            if (ua.indexOf('iPhone') > -1) os = 'iOS';
-            else if (ua.indexOf('iPad') > -1) os = 'iPadOS';
-            else if (ua.indexOf('Android') > -1) os = 'Android';
-            else if (ua.indexOf('Windows') > -1) os = 'Windows';
-            else if (ua.indexOf('Mac') > -1) os = 'macOS';
-            else if (ua.indexOf('Linux') > -1) os = 'Linux';
-
-            // Device type
-            const isAndroid = ua.indexOf('Android') > -1;
-            const isIOS = ua.indexOf('iPhone') > -1 || ua.indexOf('iPad') > -1;
-            const isMobile = isAndroid || isIOS;
-
-            document.getElementById('browserInfo').textContent = browser;
-            document.getElementById('osInfo').textContent = os;
-            document.getElementById('deviceType').textContent = isMobile ? 'Mobile' : 'Desktop';
-            document.getElementById('platformInfo').textContent = platform.toUpperCase();
+        function checkSafariUserAgent(event) {
+            event.preventDefault();
+            const userAgent = navigator.userAgent;
+            const isSafari = /Safari/i.test(userAgent) && !/Chrome/i.test(userAgent) && !/Chromium/i.test(userAgent);
+            
+            document.getElementById('userAgentResult').textContent = userAgent;
+            document.getElementById('lastCheck').textContent = `Safari Detected: ${isSafari ? '✓ Yes' : '✗ No'} - Checked at ${new Date().toLocaleTimeString()}`;
         }
-
-        function copyUserAgent() {
-            if (capturedUserAgent) {
-                navigator.clipboard.writeText(capturedUserAgent).then(() => {
-                    const btn = document.getElementById('copyButton');
-                    const originalText = btn.innerHTML;
-                    btn.textContent = '✓ Copied!';
-                    btn.classList.add('copied');
-                    
-                    setTimeout(() => {
-                        btn.innerHTML = originalText;
-                        btn.classList.remove('copied');
-                    }, 2000);
-                });
-            }
-        }
-
-        // Load user agent on page load
-        window.addEventListener('load', function() {
-            // Optional: automatically detect on load
-            // detectAgent('auto');
-        });
     </script>
 </body>
 </html>
