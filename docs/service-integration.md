@@ -1,6 +1,6 @@
 # Security Stack Service Integration
 
-This stack is a Linux Docker Engine lab for SOC telemetry, incident response, and vulnerability management. It is not a production hardening baseline.
+This stack is a local Docker Compose/Podman Compose lab for SOC telemetry, incident response, and vulnerability management. It is not a production hardening baseline.
 
 ## Profiles And Entry Points
 
@@ -36,7 +36,7 @@ Operational resilience comes from persistent named volumes plus the `volume-back
 
 The Ghost provides the local LLM reasoning layer. `ghost-assessor` queries Graylog for recent logs, samples local security evidence, sends the context to `ghost:11434/api/generate`, and writes analyst-facing Markdown/JSON reports. The model is stateless unless future RAG context is explicitly added.
 
-IPFire and host firewall artifacts are currently disabled under `.disabled-services/`. Uptime Kuma monitors availability of the exposed service FQDNs, while Suricata and Zeek provide network visibility when the `network` profile has a useful capture interface.
+The active stack does not include an edge firewall. Uptime Kuma monitors service availability, while Suricata and Zeek provide network visibility when the `network` profile has a useful capture interface.
 
 ## Non-Root And Privilege Notes
 

@@ -39,13 +39,13 @@ The **HQ Security Stack** is a comprehensive home security solution that impleme
 - 🛡️ [Network & DNS Setup](./networking-dns.md)
 - 📊 [Uptime Dashboard](./uptime-dashboard.md)
 - 🔐 [Secrets Management](./vault-secrets.md)
-- 🐳 [Docker Registry Cache](./registry-cache.md)
+- 🐳 [Image Prewarm](./registry-cache.md)
 
 ### Advanced Documentation
 
 - [Ghost Analysis](./ghost-analysis.md)
 - [Suricata Rulesets](./suricata-rulesets.md)
-- [Suricata & IPFire Assessment](./suricata-ipfire-assessment.md)
+- [Network Sensor Scope](./network-sensor-scope.md)
 - [Windows Endpoint Detection](./windows-endpoint-detection.md)
 - [GitHub Actions Setup](./github-actions.md)
 - [Harbor Container Registry](./harbor.md)

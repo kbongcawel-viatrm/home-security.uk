@@ -14,18 +14,7 @@ This workspace contains a working OSSEC manager setup inside the hardened `CBL-M
 
 ## Manager image
 
-The active setup uses the official Atomic image via [D:/codex-workspace/ossec-server/docker-compose.yml](D:/codex-workspace/ossec-server/docker-compose.yml):
-
-```yaml
-services:
-  ossec-server:
-    image: ${OSSEC_IMAGE:-atomicorp/ossec-docker:v3.6}
-```
-
-The local reference Dockerfiles are kept as:
-
-- [D:/codex-workspace/ossec-server/Dockerfile.official](D:/codex-workspace/ossec-server/Dockerfile.official)
-- [D:/codex-workspace/ossec-server/Dockerfile.customebuilt](D:/codex-workspace/ossec-server/Dockerfile.customebuilt)
+The WSL Compose project uses the prebuilt `atomicorp/ossec-docker:v3.6` image. It is separate from the main security stack.
 
 ## Start the OSSEC WSL
 

@@ -2,6 +2,7 @@
 
 | Commit Message | Branch | Hash | Date |
 | --- | --- | --- | --- |
+| Remove inactive files and align pipeline docs | main | — | 2026-10-09 |
 | Document streamlined image and container startup pipeline | main | — | 2026-10-09 |
 | Stop all containers by Compose project label | main | — | 2026-10-09 |
 | Document Podman startup and firewall setup | main | — | 2026-10-09 |

@@ -146,6 +146,7 @@ jobs:
           elif [ -f ".env.example" ]; then
             echo "WARNING: ${ENV_FILE} was not found. Falling back to .env.example." >&2
             cp .env.example .env
+          else
             echo "Neither ${ENV_FILE} nor .env.example exists." >&2
             exit 1
           fi

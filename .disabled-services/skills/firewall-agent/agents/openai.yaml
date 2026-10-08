@@ -1,4 +1,0 @@
-interface:
-  display_name: "Firewall Agent"
-  short_description: "Operate IPFire and host firewall rules"
-  default_prompt: "Use $firewall-agent to review IPFire Green/Red routing and hq-sec-stack inbound firewall rules."
