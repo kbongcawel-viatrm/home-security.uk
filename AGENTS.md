@@ -2,7 +2,7 @@
 
 ## Project Structure & Module Organization
 
-This repository combines a Docker Compose home security lab with static GitHub Pages content. The main stack definition is `security-stack.compose.yml`; operational scripts are in `scripts/`, configuration and service-specific assets are grouped under `The Brain/`, `The Eyes/`, `The Ghost/`, `The Hands/`, `The Shield/`, and `The Sword/`. Shared documentation lives in `docs/`, while `index.html`, `docs/index.html`, and Markdown files provide the published site. Agent instructions and playbooks are under `skills/`. Preserve existing directory names, including spaces and capitalization.
+This repository combines a Docker Compose home security lab with static GitHub Pages content. The main stack definition is `security-stack.compose.yml`; operational scripts are in `scripts/`, configuration and service-specific assets are grouped under `The Brain/`, `The Eyes/`, `The Ghost/`, `The Hands/`, `The Shield/`, and `The Sword/`. Shared documentation lives in `docs/`, while `index.html`, `docs/index.html`, and Markdown files provide the published site. AI agent instructions and metadata are grouped under `Agents/`. Preserve existing directory names, including spaces and capitalization.
 
 ## Build, Test, and Development Commands
 
