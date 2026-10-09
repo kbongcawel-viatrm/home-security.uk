@@ -10,6 +10,28 @@ HEALTH_TIMEOUT_SECONDS="${HEALTH_TIMEOUT_SECONDS:-900}"
 FIREWALL_ZONE="${FIREWALL_ZONE:-}"
 log() { printf '%s %s\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "$*"; }
 fail() { printf 'ERROR: %s\n' "$*" >&2; exit 1; }
+if [ -t 1 ] || [ "${FORCE_COLOR:-}" = 1 ]; then
+  COLOR_GREEN=$(printf '\033[0;32m')
+  COLOR_RESET=$(printf '\033[0m')
+else
+  COLOR_GREEN=''
+  COLOR_RESET=''
+fi
+log_starting() { printf '%s %s%s%s\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "$COLOR_GREEN" "$*" "$COLOR_RESET"; }
+progress() {
+  current="$1"
+  total="$2"
+  label="$3"
+  width=30
+  filled=$(( current * width / total ))
+  empty=$(( width - filled ))
+  bar="$(printf '%*s' "$filled" '' | tr ' ' '#')$(printf '%*s' "$empty" '' | tr ' ' '.')"
+  if [ -t 1 ] || [ "${FORCE_COLOR:-}" = 1 ]; then
+    printf '\r%s %s[%s] %s/%s%s' "$COLOR_GREEN" "$label " "$bar" "$current" "$total" "$COLOR_RESET"
+  else
+    printf '%s %s [%s] %s/%s\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "$label" "$bar" "$current" "$total"
+  fi
+}
 cd "$ROOT"
 
 if [ ! -f .env ]; then
@@ -188,23 +210,31 @@ uptime-kuma docker.io/louislam/uptime-kuma:latest
 uptime-kuma-sync docker.io/library/python:3.12-alpine
 IMAGES
 
-log "Validating image references and starting profile mvp"
+log_starting "Starting MVP containers (profile mvp)"
 compose --profile mvp config >/dev/null
 compose --profile mvp up --detach
 
 log "Waiting for all MVP containers and health checks (timeout ${HEALTH_TIMEOUT_SECONDS}s)"
 containers="secdns caddy wazuh-indexer wazuh-manager wazuh-dashboard graylog-mongo graylog-datanode graylog fluent-bit uptime-kuma uptime-kuma-sync"
 deadline=$(( $(date +%s) + HEALTH_TIMEOUT_SECONDS ))
+container_total=0
+for container in $containers; do container_total=$((container_total + 1)); done
 while :; do
   ready=true
+  ready_count=0
   for container in $containers; do
     status="$(podman inspect --format '{{.State.Status}} {{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$container" 2>/dev/null || true)"
-    case "$status" in 'running healthy'|'running none') ;; *) ready=false; break ;; esac
+    case "$status" in
+      'running healthy'|'running none') ready_count=$((ready_count + 1)) ;;
+      *) ready=false ;;
+    esac
   done
+  progress "$ready_count" "$container_total" "MVP readiness"
   [ "$ready" = true ] && break
   [ "$(date +%s)" -lt "$deadline" ] || fail "Container readiness timed out; inspect with podman-compose -f simplified.compose.yml --profile mvp ps"
   sleep 10
 done
+printf '\n'
 
 log "Checking Graylog GELF ingestion"
 GRAYLOG_PORT="${GRAYLOG_GELF_UDP_PORT:-$(env_value GRAYLOG_GELF_UDP_PORT)}"

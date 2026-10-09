@@ -4,12 +4,39 @@ set -eu
 
 ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
 COMPOSE_FILE="$ROOT/simplified.compose.yml"
-MODE="${1:-stop}"
+MODE="${1:-down}"
 TIMEOUT_SECONDS="${KILLSWITCH_TIMEOUT_SECONDS:-60}"
 PROJECT_NAME="${COMPOSE_PROJECT_NAME:-}"
 
 log() {
   printf '%s %s\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "$*"
+}
+
+if [ -t 1 ] || [ "${FORCE_COLOR:-}" = 1 ]; then
+  COLOR_STOP=$(printf '\033[1;31m')
+  COLOR_RESET=$(printf '\033[0m')
+else
+  COLOR_STOP=''
+  COLOR_RESET=''
+fi
+
+log_stopping() {
+  printf '%s %s%s%s\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "$COLOR_STOP" "$*" "$COLOR_RESET"
+}
+
+progress() {
+  current="$1"
+  total="$2"
+  label="$3"
+  width=30
+  filled=$(( current * width / total ))
+  empty=$(( width - filled ))
+  bar="$(printf '%*s' "$filled" '' | tr ' ' '#')$(printf '%*s' "$empty" '' | tr ' ' '.')"
+  if [ -t 1 ] || [ "${FORCE_COLOR:-}" = 1 ]; then
+    printf '\r%s %s[%s] %s/%s%s' "$COLOR_STOP" "$label " "$bar" "$current" "$total" "$COLOR_RESET"
+  else
+    printf '%s %s [%s] %s/%s\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "$label" "$bar" "$current" "$total"
+  fi
 }
 
 fail() {
@@ -20,6 +47,8 @@ fail() {
 usage() {
   cat <<'USAGE'
 Usage: scripts/kill.sh [stop|down|status]
+
+With no argument, the default mode is down.
 
 stop    Gracefully stop MVP containers and keep containers, networks, and volumes.
 down    Stop and remove MVP containers and its network; keep named volumes and images.
@@ -82,8 +111,14 @@ remove_stale_containers() {
     ids="$(podman ps -aq --filter "label=$label=$PROJECT_NAME")"
     [ -n "$ids" ] || continue
     log "Removing all containers with $label=$PROJECT_NAME"
-    # shellcheck disable=SC2086
-    podman rm --force $ids
+    total="$(printf '%s\n' "$ids" | wc -l | tr -d ' ')"
+    removed=0
+    for id in $ids; do
+      podman rm --force "$id" >/dev/null
+      removed=$((removed + 1))
+      progress "$removed" "$total" "Removing containers"
+    done
+    printf '\n'
   done
 }
 
@@ -95,10 +130,14 @@ case "$MODE" in
     compose --profile mvp ps
     ;;
   stop)
+    log_stopping "Stopping MVP containers"
     compose --profile mvp stop --timeout "$TIMEOUT_SECONDS"
-    log "MVP containers stopped; containers, network, volumes, and images were preserved"
+    log_stopping "MVP containers stopped; containers, network, volumes, and images were preserved"
     ;;
   down)
+    log_stopping "Stopping MVP containers before removal"
+    compose --profile mvp stop --timeout "$TIMEOUT_SECONDS" || \
+      log "Compose stop reported an error; continuing with teardown"
     compose --profile mvp down --remove-orphans --timeout "$TIMEOUT_SECONDS" || \
       log "Compose down reported an error; continuing with label-based container cleanup"
     remove_stale_containers
