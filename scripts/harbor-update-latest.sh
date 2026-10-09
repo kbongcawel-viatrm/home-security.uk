@@ -19,6 +19,14 @@ if [ ! -r "$image_list" ]; then
   exit 1
 fi
 
+if [ -n "${HARBOR_USERNAME:-}" ] && [ -n "${HARBOR_PASSWORD:-}" ]; then
+  printf '%s' "$HARBOR_PASSWORD" | podman login demo.goharbor.io \
+    --username "$HARBOR_USERNAME" --password-stdin
+else
+  printf 'Set HARBOR_USERNAME and HARBOR_PASSWORD before running this script.\n' >&2
+  exit 1
+fi
+
 failures=0
 processed=0
 logged_in_registry=
@@ -44,7 +52,7 @@ while IFS= read -r harbor_image || [ -n "$harbor_image" ]; do
     if ! podman login --get-login "$harbor_registry" >/dev/null 2>&1; then
       if [ -n "${HARBOR_USERNAME:-}" ] && [ -n "${HARBOR_PASSWORD:-}" ]; then
         if ! printf '%s' "$HARBOR_PASSWORD" | podman login "$harbor_registry" \
-          --username "$HARBOR_USERNAME" --password-stdin; then
+          --username "$HARBOR_USERNAME" --password "$HARBOR_PASSWORD"; then
           printf 'Harbor login failed for %s\n' "$harbor_registry" >&2
           exit 1
         fi
@@ -54,6 +62,26 @@ while IFS= read -r harbor_image || [ -n "$harbor_image" ]; do
       fi
     fi
     logged_in_registry=$harbor_registry
+  fi
+
+  # Skip work only when this exact source image is already local and Harbor's
+  # latest tag points at the same manifest. A missing or stale copy follows the
+  # normal pull/tag/push path below.
+  if podman image exists "$harbor_image" 2>/dev/null; then
+    if ! command -v skopeo >/dev/null 2>&1; then
+      printf 'Cannot check Harbor image digests: skopeo is required\n' >&2
+      exit 1
+    fi
+
+    local_digest=$(podman image inspect --format '{{.Digest}}' "$harbor_image" 2>/dev/null || true)
+    remote_source_digest=$(skopeo inspect --format '{{.Digest}}' "docker://${harbor_image}" 2>/dev/null || true)
+    remote_latest_digest=$(skopeo inspect --format '{{.Digest}}' "docker://${harbor_latest}" 2>/dev/null || true)
+
+    if [ -n "$local_digest" ] && [ "$local_digest" = "$remote_source_digest" ] &&
+      [ "$remote_source_digest" = "$remote_latest_digest" ]; then
+      printf 'Skipping %s; already present locally and pushed to Harbor as latest\n' "$harbor_image"
+      continue
+    fi
   fi
 
   printf 'Pulling %s\n' "$harbor_image"
