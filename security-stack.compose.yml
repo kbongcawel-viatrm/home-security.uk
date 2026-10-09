@@ -32,7 +32,7 @@ services:
   ############################################################
 
   secdns:
-    image: ${COREDNS_IMAGE:-docker.io/coredns/coredns:${COREDNS_VERSION:-1.11.3}}
+    image: demo.goharbor.io/home-security-uk-registry/secdns:v1.1
     container_name: secdns
     profiles: ["dns", "all"]
     command: ["-conf", "/etc/coredns/Corefile"]
@@ -53,38 +53,8 @@ services:
       retries: 5
     logging: *graylog-logging
 
-  fqdn-proxy:
-    build:
-      context: "./The Hands/FQDN proxy - Caddy"
-      dockerfile: Dockerfile
-      labels:
-        home-securityuk.project: ${COMPOSE_PROJECT_NAME:-home-security-uk}
-    image: localhost/hq-sec/caddy-crowdsec
-    container_name: fqdn-proxy
-    profiles: ["dns", "all"]
-    environment:
-      CADDY_CROWDSEC_API_KEY: "${CADDY_CROWDSEC_API_KEY}"
-    ports:
-      - "${FQDN_HTTP_HOST_IP:-127.0.0.1}:${FQDN_HTTP_PORT:-8081}:80"
-      - "${FQDN_HTTPS_HOST_IP:-127.0.0.1}:${FQDN_HTTPS_PORT:-8443}:443"
-    volumes:
-      - "./The Hands/FQDN proxy - Caddy/Caddyfile:/etc/caddy/Caddyfile:ro"
-      - fqdn-proxy-data:/data
-      - fqdn-proxy-config:/config
-      - caddy-logs:/var/log/caddy
-    networks:
-      secnet:
-        ipv4_address: "${FQDN_PROXY_IPV4:-10.77.0.80}"
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:80/healthz >/dev/null || exit 1"]
-      interval: 30s
-      timeout: 5s
-      retries: 5
-    logging: *graylog-logging
-
   caddy:
-    image: ${CADDY_IMAGE:-docker.io/library/caddy:${CADDY_VERSION:-2.8.4-alpine}}
+    image: demo.goharbor.io/home-security-uk-registry/caddy:v1.1
     container_name: caddy
     profiles: ["ops", "dashboard", "all"]
     volumes:
@@ -105,7 +75,7 @@ services:
   ############################################################
 
   ghost:
-    image: ${OLLAMA_IMAGE:-docker.io/ollama/ollama:${GHOST_VERSION:-0.20.7}}
+    image: demo.goharbor.io/home-security-uk-registry/ghost:v1.1
     container_name: ghost
     profiles: ["ghost", "llm", "all"]
     volumes:
@@ -124,7 +94,7 @@ services:
     logging: *graylog-logging
 
   ghost-model-pull:
-    image: ${OLLAMA_IMAGE:-docker.io/ollama/ollama:${GHOST_VERSION:-0.20.7}}
+    image: demo.goharbor.io/home-security-uk-registry/ghost-model-pull:v1.1
     container_name: ghost-model-pull
     profiles: ["ghost", "llm", "all"]
     environment:
@@ -150,7 +120,7 @@ services:
     logging: *graylog-logging
 
   uptime-kuma:
-    image: ${UPTIME_KUMA_IMAGE:-docker.io/louislam/uptime-kuma:${UPTIME_KUMA_VERSION:-1.23.16}}
+    image: demo.goharbor.io/home-security-uk-registry/uptime-kuma:v1.1
     container_name: uptime-kuma
     profiles: ["ops", "monitor", "all"]
     volumes:
@@ -169,7 +139,7 @@ services:
     logging: *graylog-logging
 
   uptime-kuma-sync:
-    image: ${PYTHON_IMAGE:-docker.io/library/python:${PYTHON_ALPINE_VERSION:-3.12-alpine}}
+    image: demo.goharbor.io/home-security-uk-registry/uptime-kuma-sync:v1.1
     container_name: uptime-kuma-sync
     profiles: ["ops", "monitor", "all"]
     environment:
@@ -191,7 +161,7 @@ services:
     logging: *graylog-logging
 
   container-health-exporter:
-    image: ${PYTHON_IMAGE:-docker.io/library/python:${PYTHON_ALPINE_VERSION:-3.12-alpine}}
+    image: demo.goharbor.io/home-security-uk-registry/container-health-exporter:v1.1
     container_name: container-health-exporter
     profiles: ["ops", "monitor", "all"]
     volumes:
@@ -213,7 +183,7 @@ services:
   ############################################################
 
   portainer:
-    image: ${PORTAINER_CE_IMAGE:-docker.io/portainer/portainer-ce:${PORTAINER_VERSION:-latest}}
+    image: demo.goharbor.io/home-security-uk-registry/portainer:v1.1
     container_name: portainer
     profiles: ["ops", "monitor", "all"]
     restart: unless-stopped
@@ -228,7 +198,7 @@ services:
     logging: *graylog-logging
 
   log-forwarder:
-    image: ${FLUENT_BIT_IMAGE:-docker.io/fluent/fluent-bit:${FLUENT_BIT_VERSION:-3.2.10}}
+    image: demo.goharbor.io/home-security-uk-registry/log-forwarder:v1.1
     container_name: log-forwarder
     profiles: ["ops", "logs", "all"]
     volumes:
@@ -249,7 +219,7 @@ services:
     logging: *graylog-logging
 
   graylog-bootstrap:
-    image: ${CURL_IMAGE:-docker.io/curlimages/curl:${CURL_VERSION:-8.10.1}}
+    image: demo.goharbor.io/home-security-uk-registry/graylog-bootstrap:v1.1
     container_name: graylog-bootstrap
     profiles: ["ops", "logs", "all"]
     environment:
@@ -270,7 +240,7 @@ services:
     logging: *graylog-logging
 
   ghost-assessor:
-    image: ${PYTHON_IMAGE:-docker.io/library/python:${PYTHON_ALPINE_VERSION:-3.12-alpine}}
+    image: demo.goharbor.io/home-security-uk-registry/ghost-assessor:v1.1
     container_name: ghost-assessor
     profiles: ["ghost", "llm", "all"]
     environment:
@@ -324,7 +294,7 @@ services:
   ############################################################
 
   vault:
-    image: ${VAULT_IMAGE:-docker.io/hashicorp/vault:${VAULT_VERSION:-1.18}}
+    image: demo.goharbor.io/home-security-uk-registry/vault:v1.1
     container_name: vault
     profiles: ["secrets", "all"]
     cap_add:
@@ -353,7 +323,7 @@ services:
     logging: *graylog-logging
 
   vault-rotator:
-    image: ${VAULT_IMAGE:-docker.io/hashicorp/vault:${VAULT_VERSION:-1.18}}
+    image: demo.goharbor.io/home-security-uk-registry/vault-rotator:v1.1
     container_name: vault-rotator
     profiles: ["secrets", "all"]
     environment:
@@ -380,7 +350,7 @@ services:
   ############################################################
 
   volume-backup:
-    image: ${ALPINE_IMAGE:-docker.io/library/alpine:${BACKUP_ALPINE_VERSION:-3.20}}
+    image: demo.goharbor.io/home-security-uk-registry/volume-backup:v1.1
     container_name: volume-backup
     profiles: ["ops", "backup", "all"]
     environment:
@@ -390,8 +360,6 @@ services:
     volumes:
       - "./The Hands/backup/scripts:/backup/scripts:ro"
       - "./The Hands/backups:/backups"
-      - fqdn-proxy-data:/sources/fqdn-proxy-data:ro
-      - fqdn-proxy-config:/sources/fqdn-proxy-config:ro
       - vault-data:/sources/vault-data:ro
       - vault-logs:/sources/vault-logs:ro
       - vault-rotator-state:/sources/vault-rotator-state:ro
@@ -431,7 +399,7 @@ services:
     logging: *graylog-logging
 
   container-vuln-scanner:
-    image: ${TRIVY_IMAGE:-docker.io/aquasec/trivy:${TRIVY_VERSION:-0.70.0}}
+    image: demo.goharbor.io/home-security-uk-registry/container-vuln-scanner:v1.1
     container_name: container-vuln-scanner
     profiles: ["ops", "scanner", "all"]
     environment:
@@ -453,7 +421,7 @@ services:
   ############################################################
 
   wazuh-indexer:
-    image: ${WAZUH_INDEXER_IMAGE:-docker.io/wazuh/wazuh-indexer:${WAZUH_VERSION:-4.14.4}}
+    image: demo.goharbor.io/home-security-uk-registry/wazuh-indexer:v1.1
     container_name: wazuh-indexer
     profiles: ["brain", "all"]
     environment:
@@ -480,7 +448,7 @@ services:
     logging: *graylog-logging
 
   wazuh-manager:
-    image: ${WAZUH_MANAGER_IMAGE:-docker.io/wazuh/wazuh-manager:${WAZUH_VERSION:-4.14.4}}
+    image: demo.goharbor.io/home-security-uk-registry/wazuh-manager:v1.1
     container_name: wazuh-manager
     hostname: wazuh-manager
     profiles: ["brain", "all"]
@@ -512,7 +480,7 @@ services:
     logging: *graylog-logging
 
   wazuh-dashboard:
-    image: ${WAZUH_DASHBOARD_IMAGE:-docker.io/wazuh/wazuh-dashboard:${WAZUH_VERSION:-4.14.4}}
+    image: demo.goharbor.io/home-security-uk-registry/wazuh-dashboard:v1.1
     container_name: wazuh-dashboard
     profiles: ["brain", "all"]
     environment:
@@ -538,7 +506,7 @@ services:
     logging: *graylog-logging
 
   graylog-mongo:
-    image: ${MONGO_IMAGE:-docker.io/library/mongo:${MONGO_VERSION:-7.0.29}}
+    image: demo.goharbor.io/home-security-uk-registry/graylog-mongo:v1.1
     container_name: graylog-mongo
     profiles: ["brain", "all"]
     volumes:
@@ -554,7 +522,7 @@ services:
     logging: *graylog-logging
 
   graylog-datanode:
-    image: ${GRAYLOG_DATANODE_IMAGE:-docker.io/graylog/graylog-datanode:${GRAYLOG_VERSION:-7.0.6}}
+    image: demo.goharbor.io/home-security-uk-registry/graylog-datanode:v1.1
     container_name: graylog-datanode
     profiles: ["brain", "all"]
     hostname: graylog-datanode
@@ -586,7 +554,7 @@ services:
     logging: *graylog-logging
 
   graylog:
-    image: ${GRAYLOG_IMAGE:-docker.io/graylog/graylog:${GRAYLOG_VERSION:-7.0.6}}
+    image: demo.goharbor.io/home-security-uk-registry/graylog:v1.1
     container_name: graylog
     profiles: ["brain", "all"]
     hostname: graylog
@@ -628,7 +596,7 @@ services:
   ############################################################
 
   suricata:
-    image: ${SURICATA_IMAGE:-docker.io/jasonish/suricata:${SURICATA_VERSION:-7.0}}
+    image: demo.goharbor.io/home-security-uk-registry/suricata:v1.1
     container_name: suricata
     profiles: ["network", "all"]
     network_mode: host
@@ -655,7 +623,7 @@ services:
     logging: *graylog-logging
 
   suricata-rules-update:
-    image: ${SURICATA_IMAGE:-docker.io/jasonish/suricata:${SURICATA_VERSION:-7.0}}
+    image: demo.goharbor.io/home-security-uk-registry/suricata-rules-update:v1.1
     container_name: suricata-rules-update
     profiles: ["network", "all"]
     environment:
@@ -673,7 +641,7 @@ services:
     logging: *graylog-logging
 
   zeek:
-    image: ${ZEEK_IMAGE:-docker.io/zeek/zeek:${ZEEK_VERSION:-lts}}
+    image: demo.goharbor.io/home-security-uk-registry/zeek:v1.1
     container_name: zeek
     profiles: ["network", "all"]
     network_mode: host
@@ -691,7 +659,7 @@ services:
   ############################################################
 
   thehive:
-    image: ${THEHIVE_IMAGE:-docker.io/strangebee/thehive:${THEHIVE_VERSION:-5.7}}
+    image: demo.goharbor.io/home-security-uk-registry/thehive:v1.1
     container_name: thehive
     profiles: ["ir", "all"]
     environment:
@@ -714,7 +682,7 @@ services:
     logging: *graylog-logging
 
   shuffle-opensearch:
-    image: ${OPENSEARCH_IMAGE:-docker.io/opensearchproject/opensearch:3.2.0}
+    image: demo.goharbor.io/home-security-uk-registry/shuffle-opensearch:v1.1
     container_name: shuffle-opensearch
     profiles: ["ir", "all"]
     environment:
@@ -746,7 +714,7 @@ services:
     logging: *graylog-logging
 
   shuffle-backend:
-    image: ${SHUFFLE_BACKEND_IMAGE:-ghcr.io/shuffle/shuffle-backend:${SHUFFLE_VERSION:-latest}}
+    image: demo.goharbor.io/home-security-uk-registry/shuffle-backend:v1.1
     container_name: shuffle-backend
     profiles: ["ir", "all"]
     environment:
@@ -776,7 +744,7 @@ services:
     logging: *graylog-logging
 
   shuffle-frontend:
-    image: ${SHUFFLE_FRONTEND_IMAGE:-ghcr.io/shuffle/shuffle-frontend:${SHUFFLE_VERSION:-latest}}
+    image: demo.goharbor.io/home-security-uk-registry/shuffle-frontend:v1.1
     container_name: shuffle-frontend
     profiles: ["ir", "all"]
     environment:
@@ -798,7 +766,7 @@ services:
     logging: *graylog-logging
 
   shuffle-orborus:
-    image: ${SHUFFLE_ORBORUS_IMAGE:-ghcr.io/shuffle/shuffle-orborus:${SHUFFLE_VERSION:-latest}}
+    image: demo.goharbor.io/home-security-uk-registry/shuffle-orborus:v1.1
     container_name: shuffle-orborus
     profiles: ["ir", "all"]
     environment:
@@ -829,7 +797,7 @@ services:
     logging: *graylog-logging
 
   velociraptor:
-    image: ${VELOCIRAPTOR_IMAGE:-docker.io/xboarder56/velociraptor:${VELOCIRAPTOR_VERSION:-0.76.1}}
+    image: demo.goharbor.io/home-security-uk-registry/velociraptor:v1.1
     container_name: velociraptor
     profiles: ["ir", "all"]
     environment:
@@ -852,7 +820,7 @@ services:
     logging: *graylog-logging
 
   crowdsec:
-    image: ${CROWDSEC_IMAGE:-docker.io/crowdsecurity/crowdsec:${CROWDSEC_VERSION:-v1.6.3}}
+    image: demo.goharbor.io/home-security-uk-registry/crowdsec:v1.1
     container_name: crowdsec
     profiles: ["ir", "all", "shield"]
     environment:
@@ -874,7 +842,7 @@ services:
     logging: *graylog-logging
 
   ansible-ir:
-    image: ${ANSIBLE_IMAGE:-docker.io/cytopia/ansible:${ANSIBLE_VERSION:-2.16-tools}}
+    image: demo.goharbor.io/home-security-uk-registry/ansible-ir:v1.1
     container_name: ansible-ir
     profiles: ["ir", "all"]
     user: "${SECSTACK_UID:-1000}:${SECSTACK_GID:-1000}"
@@ -895,7 +863,7 @@ services:
   ############################################################
 
   osquery:
-    image: ${OSQUERY_IMAGE:-docker.io/osquery/osquery:${OSQUERY_VERSION:-5.8.2-ubuntu22.04}}
+    image: demo.goharbor.io/home-security-uk-registry/osquery:v1.1
     container_name: osquery
     profiles: ["vuln", "all"]
     user: "${SECSTACK_UID:-1000}:${SECSTACK_GID:-1000}"
@@ -909,7 +877,7 @@ services:
     logging: *graylog-logging
 
   vulnerability-tests:
-    image: ${VULNERABILITY_TESTS_IMAGE:-registry.community.greenbone.net/community/vulnerability-tests:${GREENBONE_DATA_TAG:-latest}}
+    image: demo.goharbor.io/home-security-uk-registry/vulnerability-tests:v1.1
     container_name: vulnerability-tests
     profiles: ["vuln", "all"]
     environment:
@@ -922,7 +890,7 @@ services:
     logging: *graylog-logging
 
   notus-data:
-    image: ${NOTUS_DATA_IMAGE:-registry.community.greenbone.net/community/notus-data:${GREENBONE_DATA_TAG:-latest}}
+    image: demo.goharbor.io/home-security-uk-registry/notus-data:v1.1
     container_name: notus-data
     profiles: ["vuln", "all"]
     environment:
@@ -934,7 +902,7 @@ services:
     logging: *graylog-logging
 
   scap-data:
-    image: ${GREENBONE_SCAP_DATA_IMAGE:-${SCAP_DATA_IMAGE:-docker.io/vulnvision/greenbone-scap-data:latest}}
+    image: demo.goharbor.io/home-security-uk-registry/scap-data:v1.1
     container_name: scap-data
     profiles: ["vuln", "all"]
     environment:
@@ -946,7 +914,7 @@ services:
     logging: *graylog-logging
 
   cert-bund-data:
-    image: ${CERT_BUND_DATA_IMAGE:-registry.community.greenbone.net/community/cert-bund-data:${GREENBONE_DATA_TAG:-latest}}
+    image: demo.goharbor.io/home-security-uk-registry/cert-bund-data:v1.1
     container_name: cert-bund-data
     profiles: ["vuln", "all"]
     environment:
@@ -958,7 +926,7 @@ services:
     logging: *graylog-logging
 
   dfn-cert-data:
-    image: ${DFN_CERT_DATA_IMAGE:-registry.community.greenbone.net/community/dfn-cert-data:${GREENBONE_DATA_TAG:-latest}}
+    image: demo.goharbor.io/home-security-uk-registry/dfn-cert-data:v1.1
     container_name: dfn-cert-data
     profiles: ["vuln", "all"]
     environment:
@@ -973,7 +941,7 @@ services:
     logging: *graylog-logging
 
   data-objects:
-    image: ${DATA_OBJECTS_IMAGE:-registry.community.greenbone.net/community/data-objects:${GREENBONE_DATA_TAG:-latest}}
+    image: demo.goharbor.io/home-security-uk-registry/data-objects:v1.1
     container_name: data-objects
     profiles: ["vuln", "all"]
     environment:
@@ -986,7 +954,7 @@ services:
     logging: *graylog-logging
 
   report-formats:
-    image: ${REPORT_FORMATS_IMAGE:-registry.community.greenbone.net/community/report-formats:${GREENBONE_DATA_TAG:-latest}}
+    image: demo.goharbor.io/home-security-uk-registry/report-formats:v1.1
     container_name: report-formats
     profiles: ["vuln", "all"]
     environment:
@@ -1002,7 +970,7 @@ services:
     logging: *graylog-logging
 
   gpg-data:
-    image: ${GPG_DATA_IMAGE:-registry.community.greenbone.net/community/gpg-data:${GREENBONE_DATA_TAG:-latest}}
+    image: demo.goharbor.io/home-security-uk-registry/gpg-data:v1.1
     container_name: gpg-data
     profiles: ["vuln", "all"]
     volumes:
@@ -1012,7 +980,7 @@ services:
     logging: *graylog-logging
 
   redis-server:
-    image: ${REDIS_SERVER_IMAGE:-docker.io/greenbone/redis-server:${GREENBONE_REDIS_TAG:-latest}}
+    image: demo.goharbor.io/home-security-uk-registry/redis-server:v1.1
     container_name: redis-server
     profiles: ["vuln", "all"]
     restart: unless-stopped
@@ -1023,7 +991,7 @@ services:
     logging: *graylog-logging
 
   pg-gvm-migrator:
-    image: ${PG_GVM_MIGRATOR_IMAGE:-registry.community.greenbone.net/community/pg-gvm-migrator:${GREENBONE_IMAGE_TAG:-stable}}
+    image: demo.goharbor.io/home-security-uk-registry/pg-gvm-migrator:v1.1
     container_name: pg-gvm-migrator
     profiles: ["vuln", "all"]
     volumes:
@@ -1034,7 +1002,7 @@ services:
     logging: *graylog-logging
 
   pg-gvm:
-    image: ${PG_GVM_IMAGE:-registry.community.greenbone.net/community/pg-gvm:${GREENBONE_IMAGE_TAG:-stable}}
+    image: demo.goharbor.io/home-security-uk-registry/pg-gvm:v1.1
     container_name: pg-gvm
     profiles: ["vuln", "all"]
     restart: unless-stopped
@@ -1049,7 +1017,7 @@ services:
     logging: *graylog-logging
 
   gvmd:
-    image: ${GVMD_IMAGE:-registry.community.greenbone.net/community/gvmd:${GREENBONE_IMAGE_TAG:-stable}}
+    image: demo.goharbor.io/home-security-uk-registry/gvmd:v1.1
     container_name: gvmd
     profiles: ["vuln", "all"]
     restart: unless-stopped
@@ -1084,7 +1052,7 @@ services:
     logging: *graylog-logging
 
   gsa:
-    image: ${GSA_IMAGE:-registry.community.greenbone.net/community/gsa:${GREENBONE_GSA_TAG:-stable-slim}}
+    image: demo.goharbor.io/home-security-uk-registry/gsa:v1.1
     container_name: gsa
     profiles: ["vuln", "all"]
     environment:
@@ -1100,7 +1068,7 @@ services:
     logging: *graylog-logging
 
   gsad:
-    image: ${GSAD_IMAGE:-registry.community.greenbone.net/community/gsad:${GREENBONE_IMAGE_TAG:-stable}}
+    image: demo.goharbor.io/home-security-uk-registry/gsad:v1.1
     container_name: gsad
     profiles: ["vuln", "all"]
     restart: unless-stopped
@@ -1118,7 +1086,7 @@ services:
     logging: *graylog-logging
 
   gvm-config:
-    image: ${GVM_CONFIG_IMAGE:-registry.community.greenbone.net/community/gvm-config:${GREENBONE_CONFIG_TAG:-latest}}
+    image: demo.goharbor.io/home-security-uk-registry/gvm-config:v1.1
     container_name: gvm-config
     profiles: ["vuln", "all"]
     environment:
@@ -1132,7 +1100,7 @@ services:
     logging: *graylog-logging
 
   greenbone-nginx:
-    image: ${NGINX_IMAGE:-registry.community.greenbone.net/community/nginx:${GREENBONE_CONFIG_TAG:-latest}}
+    image: demo.goharbor.io/home-security-uk-registry/greenbone-nginx:v1.1
     container_name: greenbone-nginx
     profiles: ["vuln", "all"]
     restart: unless-stopped
@@ -1155,7 +1123,7 @@ services:
     logging: *graylog-logging
 
   configure-openvas:
-    image: ${OPENVAS_SCANNER_IMAGE:-registry.community.greenbone.net/community/openvas-scanner:${GREENBONE_IMAGE_TAG:-stable}}
+    image: demo.goharbor.io/home-security-uk-registry/configure-openvas:v1.1
     container_name: configure-openvas
     profiles: ["vuln", "all"]
     volumes:
@@ -1176,7 +1144,7 @@ services:
     logging: *graylog-logging
 
   openvas:
-    image: ${OPENVAS_SCANNER_IMAGE:-registry.community.greenbone.net/community/openvas-scanner:${GREENBONE_IMAGE_TAG:-stable}}
+    image: demo.goharbor.io/home-security-uk-registry/openvas:v1.1
     container_name: openvas
     profiles: ["vuln", "all"]
     volumes:
@@ -1196,7 +1164,7 @@ services:
     logging: *graylog-logging
 
   openvasd:
-    image: ${OPENVAS_SCANNER_IMAGE:-registry.community.greenbone.net/community/openvas-scanner:${GREENBONE_IMAGE_TAG:-stable}}
+    image: demo.goharbor.io/home-security-uk-registry/openvasd:v1.1
     container_name: openvasd
     profiles: ["vuln", "all"]
     restart: unless-stopped
@@ -1225,7 +1193,7 @@ services:
     logging: *graylog-logging
 
   ospd-openvas:
-    image: ${OSPD_OPENVAS_IMAGE:-registry.community.greenbone.net/community/ospd-openvas:${GREENBONE_IMAGE_TAG:-stable}}
+    image: demo.goharbor.io/home-security-uk-registry/ospd-openvas:v1.1
     container_name: ospd-openvas
     profiles: ["vuln", "all"]
     restart: unless-stopped
@@ -1271,7 +1239,7 @@ services:
     logging: *graylog-logging
 
   gvm-tools:
-    image: ${GVM_TOOLS_IMAGE:-registry.community.greenbone.net/community/gvm-tools:${GREENBONE_IMAGE_TAG:-latest}}
+    image: demo.goharbor.io/home-security-uk-registry/gvm-tools:v1.1
     container_name: gvm-tools
     profiles: ["vuln", "all"]
     volumes:
@@ -1290,7 +1258,7 @@ services:
       dockerfile: Dockerfile
       labels:
         home-securityuk.project: ${COMPOSE_PROJECT_NAME:-home-security-uk}
-    image: localhost/hq-sec-stack-nmap-scanner
+    image: demo.goharbor.io/home-security-uk-registry/nmap-scanner:v1.1
     container_name: nmap-scanner
     profiles: ["network", "all"]
     command: ["/usr/local/bin/scan.sh"]
@@ -1308,7 +1276,7 @@ services:
       dockerfile: Dockerfile
       labels:
         home-securityuk.project: ${COMPOSE_PROJECT_NAME:-home-security-uk}
-    image: localhost/hq-sec-stack-wireshark-scanner
+    image: demo.goharbor.io/home-security-uk-registry/wireshark-scanner:v1.1
     container_name: wireshark-scanner
     profiles: ["network", "all"]
     network_mode: host
@@ -1331,8 +1299,6 @@ networks:
           gateway: "${SECNET_GATEWAY:-10.77.0.1}"
 
 volumes:
-  fqdn-proxy-data:
-  fqdn-proxy-config:
   vault-data:
   vault-logs:
   vault-rotator-state:
