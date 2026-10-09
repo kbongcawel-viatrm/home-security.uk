@@ -16,7 +16,7 @@ jobs:
   scan-harbor-images:
     name: Pull and scan Harbor images
     if: github.ref == 'refs/heads/security-hardening'
-    runs-on: [self-hosted, laptop]
+    runs-on: [ubuntu-latest]
     env:
       HARBOR_HOST: demo.goharbor.io
       HARBOR_API_BASE: https://demo.goharbor.io/api/v2.0
