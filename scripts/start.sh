@@ -118,9 +118,17 @@ label_harbor_artifact() {
 log "Pruning local container images before pulling current images"
 podman image prune --all --force
 
+WAZUH_VERSION="${WAZUH_VERSION:-$(env_value WAZUH_VERSION)}"
+WAZUH_VERSION="${WAZUH_VERSION:-4.14.4}"
+
 # Docker Hub source to Harbor repository used in simplified.compose.yml.
 while IFS=' ' read -r repo source; do
   [ -n "$repo" ] || continue
+  case "$repo" in
+    wazuh-indexer|wazuh-manager|wazuh-dashboard)
+      source="docker.io/wazuh/$repo:$WAZUH_VERSION"
+      ;;
+  esac
   target="$REGISTRY/$PROJECT/$repo:latest"
   log "Pulling current image $source"
   podman pull "$source"
@@ -130,9 +138,9 @@ while IFS=' ' read -r repo source; do
 done <<'IMAGES'
 secdns docker.io/coredns/coredns:latest
 caddy docker.io/library/caddy:latest
-wazuh-indexer docker.io/wazuh/wazuh-indexer:latest
-wazuh-manager docker.io/wazuh/wazuh-manager:latest
-wazuh-dashboard docker.io/wazuh/wazuh-dashboard:latest
+wazuh-indexer versioned
+wazuh-manager versioned
+wazuh-dashboard versioned
 graylog-mongo docker.io/library/mongo:latest
 graylog-datanode docker.io/graylog/graylog-datanode:latest
 graylog docker.io/graylog/graylog:latest
