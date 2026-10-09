@@ -249,6 +249,7 @@ jobs:
             --registry "${HARBOR_HOST}" \
             --source-tag "${IMAGE_TAG}" \
             --compose-service "${HARBOR_COMPOSE_SERVICE}" \
+            --latest-base-image \
             --run-id "${GITHUB_RUN_ID}" \
             --bundle-dir "${RUNNER_TEMP}/candidate"
 
