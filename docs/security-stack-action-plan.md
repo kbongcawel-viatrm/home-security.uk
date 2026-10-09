@@ -1,31 +1,59 @@
 # Security Stack Action Plan
 
-## Purpose
+## Objective
 
-This is the consolidated, assignable work list for turning the repository into a verified, interconnected security-lab stack. It separates hard blockers from deferred components and converts the work into daily-sized tasks.
+Deliver a small, reliable, interconnected MVP in this order:
 
-**Operating rule:** do not describe a capability as supported until its complete data path has been tested and the result recorded.
+1. **Simplify the current state** by removing or deferring unnecessary components.
+2. **Fix incorrect or missing parts** so the reduced stack communicates reliably.
+3. **Deliver and verify the MVP** with one reproducible security-monitoring workflow.
 
-## Status legend
+**Completion rule:** a task is not complete because a container starts. It is complete only when the stated service-to-service behavior is tested and evidence is recorded.
 
-- `[ ]` Not started
-- `[~]` In progress
-- `[x]` Complete
-- `[D]` Deferred or intentionally excluded from the MVP
+## Execution standard
 
-## Target MVP
+Every task must have:
 
-The first release should support one verified workflow:
+- One owner.
+- A named repository change or validation result.
+- A validation command or test procedure.
+- Evidence saved under `The Hands/reports/data/validation/` or linked from the work item.
+- A pass/fail/block decision.
+
+Use this sequence:
 
 ```text
-Test endpoint or synthetic event
-  -> Wazuh or network sensor
-  -> Graylog search/dashboard
-  -> analyst investigation
-  -> documented recovery and backup procedure
+Inspect -> change -> validate -> record evidence -> mark complete
 ```
 
-MVP services:
+### Assignment template
+
+```text
+Task ID:
+Owner:
+Start date:
+Target date:
+Files/configuration changed:
+Validation command(s):
+Evidence file:
+Result: PASS / FAIL / BLOCKED
+Follow-up:
+```
+
+## MVP boundary
+
+The MVP is a single-host security monitoring lab with this verified path:
+
+```text
+Authorized test endpoint or synthetic event
+  -> Wazuh
+  -> Graylog ingestion and search
+  -> analyst investigation
+  -> Uptime Kuma monitoring
+  -> backup and recovery
+```
+
+### MVP services
 
 - CoreDNS
 - Caddy/FQDN proxy
@@ -33,382 +61,608 @@ MVP services:
 - Graylog, Graylog Data Node, and MongoDB
 - Fluent Bit
 - Uptime Kuma
-- Backup service
+- Volume backup service
 
-Defer Greenbone, Shuffle, automated response, CrowdSec enforcement, and Ghost automation until the MVP is repeatable.
+### Deferred services
+
+Greenbone/OpenVAS, TheHive, Shuffle, Velociraptor, Ansible response execution, CrowdSec enforcement, Ghost assessment, Portainer, and broad host-network scanning remain opt-in until the MVP completion gate passes.
+
+## Evidence directories
+
+Create these before starting:
+
+```sh
+mkdir -p \
+  "The Hands/reports/data/validation/compose" \
+  "The Hands/reports/data/validation/integration" \
+  "The Hands/reports/data/validation/recovery" \
+  "The Hands/reports/data/validation/security" \
+  "The Hands/reports/data/validation/releases"
+```
 
 ---
 
-# 1. Critical areas to fix
+# Priority 1 — Simplify the current state
 
-These items block reliable interconnection and should be completed before feature expansion.
+**Goal:** reduce service count, privileges, resource use, attack surface, and unverified claims.
 
-## C01 — Repair Caddy/FQDN proxy wiring
+## S01 — Freeze the MVP scope
 
-**Owner:** Platform/networking  
-**Estimate:** 1 day  
-**Priority:** P0  
+**Owner:** Project lead  
+**Estimate:** 0.5 day  
 **Dependencies:** None
 
-- [ ] Mount `The Hands/FQDN proxy - Caddy/Caddyfile` into `/etc/caddy/Caddyfile`.
-- [ ] Publish the documented HTTP and HTTPS host ports.
-- [ ] Assign `${FQDN_PROXY_IPV4}` to Caddy on `secnet`.
-- [ ] Mount the `caddy-logs` volume at the path used by the Caddyfile.
-- [ ] Add a `fqdn-proxy` network alias, or rename all references to `caddy`.
-- [ ] Confirm the Caddy image contains the CrowdSec plugin or remove the plugin directive until it does.
+- [ ] Add a supported `mvp` profile to `security-stack.compose.yml`.
+- [ ] Set `SECSTACK_PROFILES=mvp` in the local deployment instructions.
+- [ ] Confirm one authorized test endpoint or synthetic event.
+- [ ] Record supported host OS, engine, Compose provider, CPU, RAM, disk, and sensor interface.
+- [ ] Define the minimum pass criteria in the release issue.
 
-**Acceptance criteria:** `dig` resolves `graylog.hq-sec.local` to the proxy IP; HTTP/HTTPS requests reach Caddy; `/healthz` returns 200; Graylog and Ghost routes work through the proxy.
+**Commands:**
 
-## C02 — Make Compose profiles dependency-safe
+```sh
+sh scripts/start-stack.sh config mvp
+podman-compose -f security-stack.compose.yml --profile mvp config >/tmp/mvp-config.yml
+```
+
+**Evidence:** `compose/mvp-scope.md`, `compose/mvp-config.yml`.
+
+**Done when:** the MVP service list and resource requirements are approved.
+
+## S02 — Remove response automation from MVP
+
+**Owner:** Response engineering  
+**Estimate:** 0.5 day  
+**Dependencies:** S01
+
+- [ ] Remove Shuffle, Ansible execution, automatic isolation, and automatic blocking from `mvp`.
+- [ ] Retain them only under explicit `ir` or opt-in profiles.
+- [ ] Disable response workflows by default.
+- [ ] Confirm no response service mounts an engine socket in the MVP.
+
+**Commands:**
+
+```sh
+podman-compose -f security-stack.compose.yml --profile mvp config >/tmp/mvp-config.yml
+grep -nE 'shuffle|ansible|orborus|docker.sock|podman.sock' /tmp/mvp-config.yml
+```
+
+**Evidence:** `security/mvp-response-exclusion.txt`.
+
+**Done when:** the command produces no unapproved response service or socket mount.
+
+## S03 — Remove resource-heavy services from MVP
 
 **Owner:** Platform  
+**Estimate:** 0.5 day  
+**Dependencies:** S01
+
+- [ ] Exclude Greenbone/OpenVAS and feed containers.
+- [ ] Exclude Ghost, model pull, and assessor containers.
+- [ ] Exclude Portainer.
+- [ ] Exclude Suricata/Zeek unless they are required for the selected MVP test.
+- [ ] Keep each deferred capability available through an explicit opt-in profile.
+
+**Commands:**
+
+```sh
+podman-compose -f security-stack.compose.yml --profile mvp config >/tmp/mvp-config.yml
+grep -nE 'greenbone|openvas|ghost|portainer|suricata|zeek' /tmp/mvp-config.yml
+```
+
+**Evidence:** `compose/mvp-services.txt`.
+
+**Done when:** no deferred component appears in the MVP render.
+
+## S04 — Defer CrowdSec enforcement
+
+**Owner:** Platform/security  
+**Estimate:** 0.5 day  
+**Dependencies:** S01
+
+- [ ] Remove the Caddy CrowdSec bouncer directive from the MVP image/config, or use a confirmed plugin-enabled image.
+- [ ] Do not claim active blocking in README or docs.
+- [ ] Retain CrowdSec configuration for a later detection/prevention profile.
+
+**Evidence:** `integration/caddy-baseline.txt` and updated documentation.
+
+**Done when:** Caddy starts without an unverified CrowdSec dependency.
+
+## S05 — Restrict engine-socket access
+
+**Owner:** Platform/security  
 **Estimate:** 1 day  
-**Priority:** P0  
-**Dependencies:** C01
+**Dependencies:** S02
 
-- [ ] Identify every `depends_on` edge crossing profile boundaries.
-- [ ] Define supported bundles such as `brain`, `logs`, `dashboard`, `ir`, `vuln`, and `all`.
-- [ ] Update `scripts/start-stack.sh` to expand required dependency profiles or reject unsupported combinations clearly.
-- [ ] Test each supported bundle from a clean project state.
+- [ ] Remove direct Docker/Podman socket mounts from MVP services.
+- [ ] Keep container-health-exporter and other socket consumers opt-in.
+- [ ] Document socket access as host-root-equivalent.
+- [ ] Plan a restricted API proxy before re-enabling socket-dependent features.
 
-**Acceptance criteria:** No supported profile starts with missing dependencies; failure messages identify missing services instead of producing partial deployments.
+**Commands:**
 
-## C03 — Establish Graylog ingestion and normalization
+```sh
+grep -nE 'docker.sock|podman.sock' /tmp/mvp-config.yml || true
+```
 
-**Owner:** Logging/SIEM  
-**Estimate:** 2 days  
-**Priority:** P0  
-**Dependencies:** C02
+**Evidence:** `security/mvp-socket-review.md`.
 
-- [ ] Verify Graylog GELF and syslog inputs are created idempotently.
-- [ ] Verify Fluent Bit can read actual Suricata, Zeek, Wazuh, Vault, OpenVAS, and Caddy paths.
-- [ ] Create Graylog streams for each source.
-- [ ] Add pipelines/extractors for timestamp, source, event type, severity, rule ID, source/destination IP, ports, and `community_id`.
-- [ ] Add retention and index rotation settings.
+**Done when:** no unapproved MVP socket mount remains.
 
-**Acceptance criteria:** A synthetic event from each enabled source is searchable with correct timestamp, source, and severity fields.
-
-## C04 — Define one authoritative alert model
-
-**Owner:** Detection engineering  
-**Estimate:** 1 day  
-**Priority:** P0  
-**Dependencies:** C03
-
-- [ ] Document Wazuh as the endpoint detection authority.
-- [ ] Document Graylog as the central search/correlation layer.
-- [ ] Define which system creates TheHive cases.
-- [ ] Define severity mapping and deduplication rules.
-- [ ] Prevent duplicate independent containment triggers.
-
-**Acceptance criteria:** A written event ownership matrix exists and a single test alert has one clear owner and lifecycle.
-
-## C05 — Verify endpoint-to-dashboard telemetry
-
-**Owner:** Endpoint/detection  
-**Estimate:** 1 day  
-**Priority:** P0  
-**Dependencies:** C03, C04
-
-- [ ] Enroll one authorized test endpoint.
-- [ ] Generate one known Windows or synthetic detection event.
-- [ ] Confirm receipt by Wazuh.
-- [ ] Confirm visibility in Graylog or the selected dashboard.
-- [ ] Record the exact event, query, timestamp, and expected result.
-
-**Acceptance criteria:** A new operator can reproduce the test event and locate it using the documented query.
-
-## C06 — Fix monitor inventory and validation
-
-**Owner:** Operations  
-**Estimate:** 1 day  
-**Priority:** P1  
-**Dependencies:** C01, C02
-
-- [ ] Correct `fqdn-proxy` versus `caddy` monitor names.
-- [ ] Make `validate-monitors.py` accept a path argument while retaining its container default.
-- [ ] Remove monitors for components not in the selected MVP.
-- [ ] Validate all HTTP and port targets from inside the monitor network.
-- [ ] Reconcile the inventory whenever a service or endpoint changes.
-
-**Acceptance criteria:** The validator runs successfully from the repository and from the container; all MVP monitors pass.
-
-## C07 — Remove unsafe default credentials from startup paths
+## S06 — Remove unsafe and unstable defaults
 
 **Owner:** Security/platform  
 **Estimate:** 1 day  
-**Priority:** P0  
-**Dependencies:** None
+**Dependencies:** S01
 
-- [ ] Replace default passwords in deployment examples with placeholders.
-- [ ] Add startup validation rejecting `admin`, `SecretPassword`, `CHANGE_ME_*`, and known example values.
-- [ ] Require Vault-rendered values for non-lab deployments.
-- [ ] Document restart/reload behavior after rotation.
+- [ ] Replace default passwords and example secrets with placeholders.
+- [ ] Reject `admin`, `SecretPassword`, `CHANGE_ME_*`, and known example values before startup.
+- [ ] Remove `latest` and `nightly` from release-grade profiles.
+- [ ] Align `.env.example` with the reduced MVP.
+- [ ] Require Vault-rendered values for non-lab operation.
 
-**Acceptance criteria:** A deployment with default credentials fails before services start; a deployment with generated secrets starts successfully.
+**Commands:**
 
-## C08 — Validate backups and restore operations
+```sh
+grep -nE 'admin|SecretPassword|CHANGE_ME|latest|nightly' .env.example security-stack.compose.yml
+sh scripts/start-stack.sh config mvp
+```
+
+**Evidence:** `security/default-secret-rejection.txt`.
+
+**Done when:** unsafe configuration fails validation before containers start.
+
+## S07 — Remove stale configuration and claims
+
+**Owner:** Documentation/platform  
+**Estimate:** 1 day  
+**Dependencies:** S01–S06
+
+- [ ] Remove deferred-service monitors from the MVP inventory.
+- [ ] Correct service names such as `fqdn-proxy` versus `caddy`.
+- [ ] Label capabilities `implemented`, `verified`, `planned`, or `deferred`.
+- [ ] Update README, docs, Compose profiles, CoreDNS records, Caddy routes, and monitor inventory together.
+
+**Evidence:** `compose-docs-inventory.md`.
+
+**Done when:** all MVP service and endpoint lists agree.
+
+### Priority 1 completion gate
+
+- [ ] `mvp` contains only required services.
+- [ ] Response automation is disabled.
+- [ ] No unsafe default credentials are accepted.
+- [ ] No unapproved engine socket is mounted.
+- [ ] Deferred services are opt-in only.
+- [ ] Documentation no longer claims unverified capabilities.
+
+---
+
+# Priority 2 — Fix incorrect or missing parts
+
+**Goal:** make the reduced stack start, resolve, authenticate, ingest telemetry, and expose accurate health signals.
+
+## F01 — Repair Caddy/FQDN proxy wiring
+
+**Owner:** Platform/networking  
+**Estimate:** 1 day  
+**Dependencies:** S07
+
+- [ ] Mount `The Hands/FQDN proxy - Caddy/Caddyfile` at `/etc/caddy/Caddyfile`.
+- [ ] Publish the configured HTTP and HTTPS host ports.
+- [ ] Assign `${FQDN_PROXY_IPV4}` to Caddy on `secnet`.
+- [ ] Mount `caddy-logs` at `/var/log/caddy`.
+- [ ] Add a `fqdn-proxy` network alias or rename every reference to `caddy`.
+- [ ] Confirm Caddy routes to Graylog and Wazuh.
+
+**Commands:**
+
+```sh
+podman-compose -f security-stack.compose.yml --profile mvp config >/tmp/mvp-config.yml
+podman-compose -f security-stack.compose.yml --profile mvp up -d caddy secdns
+dig @127.0.0.1 -p 1053 graylog.hq-sec.local
+curl -kfsS https://graylog.hq-sec.local/
+```
+
+**Evidence:** `integration/caddy-dns.txt`.
+
+**Done when:** DNS, Caddy health, and one proxied dashboard route pass.
+
+## F02 — Make profiles dependency-safe
+
+**Owner:** Platform  
+**Estimate:** 1 day  
+**Dependencies:** S07, F01
+
+- [ ] Identify every `depends_on` edge crossing profile boundaries.
+- [ ] Define supported bundles: `mvp`, `brain`, `logs`, `dashboard`, `network`, `ir`, `vuln`, and `all`.
+- [ ] Make `scripts/start-stack.sh` expand required dependencies or reject unsupported combinations.
+- [ ] Test clean startup and shutdown from an empty project state.
+
+**Commands:**
+
+```sh
+sh scripts/start-stack.sh down mvp
+sh scripts/start-stack.sh up mvp
+sh scripts/start-stack.sh ps mvp
+sh scripts/start-stack.sh down mvp
+```
+
+**Evidence:** `compose/mvp-start-stop.txt`.
+
+**Done when:** no supported bundle starts partially or with missing dependencies.
+
+## F03 — Implement real readiness checks
+
+**Owner:** Platform  
+**Estimate:** 1 day  
+**Dependencies:** F02
+
+- [ ] Replace process-only checks with endpoint/readiness checks.
+- [ ] Add checks for CoreDNS, Caddy, Graylog API, Wazuh API/indexer, and Uptime Kuma.
+- [ ] Use `service_healthy` dependencies where appropriate.
+- [ ] Define startup timeout and restart expectations.
+
+**Commands:**
+
+```sh
+podman-compose -f security-stack.compose.yml --profile mvp ps
+podman inspect <container> --format '{{json .State.Health}}'
+```
+
+**Evidence:** `compose/mvp-health.txt`.
+
+**Done when:** every MVP service has a meaningful passing health check.
+
+## F04 — Establish Graylog inputs
+
+**Owner:** Logging/SIEM  
+**Estimate:** 1 day  
+**Dependencies:** F02, F03
+
+- [ ] Make GELF and syslog input creation idempotent.
+- [ ] Confirm internal and host-published ports match the documentation.
+- [ ] Send one controlled GELF event and one syslog event from `secnet`.
+- [ ] Record input names, ports, authentication, and failure behavior.
+
+**Commands:**
+
+```sh
+podman logs graylog-bootstrap --tail 100
+podman-compose -f security-stack.compose.yml exec log-forwarder sh -c 'printf test | nc -u graylog 12201'
+```
+
+**Evidence:** `integration/graylog-inputs.txt`.
+
+**Done when:** both test events are searchable in Graylog.
+
+## F05 — Correct Fluent Bit paths and forwarding
+
+**Owner:** Logging/SIEM  
+**Estimate:** 1 day  
+**Dependencies:** F04
+
+- [ ] Verify every configured Fluent Bit path is mounted into the container.
+- [ ] Enable only MVP sources: Wazuh and Caddy unless a network sensor is intentionally included.
+- [ ] Fix timestamp parsing and source tags.
+- [ ] Confirm Fluent Bit resolves `graylog` and sends to the correct input.
+- [ ] Check for file tail errors and dropped records.
+
+**Commands:**
+
+```sh
+podman logs log-forwarder --tail 200
+grep -nE 'Path|Tag|Host|Port|Parser' 'The Eyes/Fluent Bit/fluent-bit.conf'
+```
+
+**Evidence:** `integration/fluent-bit-sources.txt`.
+
+**Done when:** each enabled source produces a searchable Graylog event with source and event time.
+
+## F06 — Define Graylog streams and normalized fields
+
+**Owner:** Detection engineering  
+**Estimate:** 1 day  
+**Dependencies:** F05
+
+- [ ] Create streams for Wazuh and Caddy.
+- [ ] Normalize `source`, `event_type`, `severity`, `rule_id`, `endpoint`, `src_ip`, `dst_ip`, `src_port`, `dst_port`, and `event_time` where available.
+- [ ] Define retention and index rotation.
+- [ ] Document Wazuh as endpoint detection authority and Graylog as search/correlation layer.
+
+**Evidence:** `integration/graylog-normalization.md` with example queries and results.
+
+**Done when:** source-specific queries return consistent fields.
+
+## F07 — Fix monitor inventory and validator
+
+**Owner:** Operations  
+**Estimate:** 1 day  
+**Dependencies:** F01–F05
+
+- [ ] Replace nonexistent `fqdn-proxy` service references with the chosen alias/service name.
+- [ ] Make `validate-monitors.py` accept a path argument while retaining `/uptime-kuma/monitors.yml` as the container default.
+- [ ] Remove deferred-service monitors from the MVP inventory.
+- [ ] Validate targets from inside the monitor network.
+
+**Commands:**
+
+```sh
+python3 'The Eyes/Uptime-Kuma/scripts/validate-monitors.py' 'The Eyes/Uptime-Kuma/monitors.yml'
+podman logs uptime-kuma-sync --tail 100
+```
+
+**Evidence:** `integration/monitor-validation.txt`.
+
+**Done when:** local and container validation pass for all MVP targets.
+
+## F08 — Validate backup and restore
 
 **Owner:** Operations/recovery  
 **Estimate:** 1 day  
-**Priority:** P1  
-**Dependencies:** MVP services running
+**Dependencies:** F02
 
-- [ ] Back up all MVP volumes.
+- [ ] Back up every MVP volume.
 - [ ] Verify checksums and archive manifests.
-- [ ] Restore one service volume into a disposable test project.
-- [ ] Record service stop/order requirements.
-- [ ] Document retention and off-host-copy requirements.
+- [ ] Restore one service volume into a disposable project.
+- [ ] Record stop/order requirements, retention, and off-host copy expectations.
 
-**Acceptance criteria:** A documented restore test recovers a service and its expected data without overwriting the live deployment.
+**Commands:**
 
----
+```sh
+podman logs volume-backup --tail 100
+find 'The Hands/backups' -maxdepth 3 -type f | sort
+```
 
-# 2. Components to remove or defer
+**Evidence:** `recovery/mvp-restore.md`.
 
-These components should not be part of the first stable milestone unless their complete integration is required and tested.
+**Done when:** persistent data is recovered without modifying the live project.
 
-## R01 — Defer automated containment
+## F09 — Add configuration consistency checks
 
-**Components:** Shuffle, Ansible response execution, automatic isolation, automatic blocking  
-**Reason:** High blast radius; the current repository does not prove alert-to-action wiring, approval, audit, or rollback.
+**Owner:** Platform/CI  
+**Estimate:** 1 day  
+**Dependencies:** F01–F07
 
-- [ ] Keep playbooks and workflow definitions, but mark execution disabled by default.
-- [ ] Permit read-only enrichment first.
-- [ ] Require explicit human approval for containment.
+- [ ] Compare Compose service names with monitor targets and CoreDNS records.
+- [ ] Remove duplicated hard-coded proxy IP values where practical.
+- [ ] Generate scanner image targets from rendered Compose.
+- [ ] Add CI checks for Compose, shell syntax, image references, ports, FQDNs, and monitor targets.
 
-## R02 — Defer CrowdSec enforcement
+**Commands:**
 
-**Components:** CrowdSec Caddy bouncer and active blocking  
-**Reason:** Caddy log volume and plugin/runtime wiring are incomplete.
+```sh
+sh -n scripts/*.sh
+podman-compose -f security-stack.compose.yml --profile mvp config
+```
 
-- [ ] Keep CrowdSec in detection-only mode.
-- [ ] Remove the README claim that active blocking is operational until a block test passes.
-- [ ] Re-enable enforcement only after Caddy plugin, LAPI, key provisioning, and rollback are verified.
+**Evidence:** `compose/consistency-check.txt`.
 
-## R03 — Defer Greenbone/OpenVAS from the MVP
+**Done when:** CI detects stale service names, image references, endpoints, and monitor entries.
 
-**Components:** Greenbone feed/data/scanner dependency graph  
-**Reason:** Resource-heavy and operationally independent from the first telemetry workflow.
+### Priority 2 completion gate
 
-- [ ] Keep the profile available but exclude it from default startup.
-- [ ] Add a separate feed synchronization and authorized-target validation milestone.
-
-## R04 — Defer Ghost as an operational dependency
-
-**Components:** `ghost`, `ghost-model-pull`, `ghost-assessor`  
-**Reason:** LLM assessment is advisory and does not replace deterministic detection; current model defaults are inconsistent.
-
-- [ ] Default to a local model or fail clearly when a cloud key is absent.
-- [ ] Keep report generation read-only.
-- [ ] Do not allow Ghost output to execute response actions.
-
-## R05 — Remove unsupported or duplicate components from default bundles
-
-- [ ] Remove services not required by the selected MVP from the default `all`-equivalent deployment.
-- [ ] Remove duplicate or stale monitor definitions.
-- [ ] Remove unused legacy assessment paths if The Ghost is the maintained assessor.
-- [ ] Remove `latest`/`nightly` image tags from any release-grade bundle.
-
-## R06 — Restrict Docker/Podman socket consumers
-
-**Components:** Portainer, Shuffle backend/Orborus, container-health-exporter  
-**Reason:** Engine sockets are effectively host-root access.
-
-- [ ] Exclude socket consumers from the default MVP unless required.
-- [ ] Replace direct sockets with a restricted API proxy where feasible.
-- [ ] Document the trust boundary and operational risk.
+- [ ] The MVP starts cleanly from an empty project state.
+- [ ] Internal DNS and Caddy routes work.
+- [ ] Graylog receives and indexes test telemetry.
+- [ ] Fluent Bit forwards only valid enabled sources.
+- [ ] Health checks and monitors pass.
+- [ ] Backup and disposable restore tests pass.
+- [ ] CI catches configuration drift.
 
 ---
 
-# 3. Areas requiring improvement
+# Priority 3 — Deliver the integrated MVP
 
-## I01 — Configuration consistency
+**Goal:** prove one complete security-monitoring workflow and safe day-to-day operation.
 
-- [ ] Generate image scan targets from rendered Compose instead of maintaining a separate manual list.
-- [ ] Replace hard-coded `10.77.0.80` references with one generated/configured source.
-- [ ] Align README, docs, Compose, Caddyfile, CoreDNS records, and monitors.
-- [ ] Add CI checks for service names, image references, FQDNs, ports, and monitor targets.
+## M01 — Clean MVP deployment
 
-## I02 — Health and readiness checks
+**Owner:** Release/operator  
+**Estimate:** 0.5 day  
+**Dependencies:** Priority 1 and Priority 2 gates
 
-- [ ] Replace process-only healthchecks with application readiness checks.
-- [ ] Add healthchecks for Graylog API, Wazuh API/indexer, Vault health, Caddy routes, and Greenbone readiness.
-- [ ] Ensure `depends_on` conditions use health or successful completion where appropriate.
+- [ ] Prepare `.env` with approved non-default secrets.
+- [ ] Start only `mvp` through `scripts/start-stack.sh`.
+- [ ] Record engine, Compose provider, image source, startup duration, failed containers, and restarts.
+- [ ] Confirm all MVP healthchecks pass.
 
-## I03 — Observability and operations
+**Evidence:** `releases/mvp-clean-start.txt`.
 
-- [ ] Define startup timeouts per profile.
-- [ ] Record image source, profile, engine, failed containers, and restart counts for every validation run.
-- [ ] Add disk usage and log-retention alerts.
-- [ ] Define service resource limits and realistic host requirements.
+## M02 — Trace one event end to end
 
-## I04 — Security hardening
+**Owner:** Endpoint/detection  
+**Estimate:** 1 day  
+**Dependencies:** M01
 
-- [ ] Pin all release images by immutable digest where practical.
-- [ ] Remove `latest` and `nightly` from production-like workflows.
-- [ ] Add image provenance/signature verification.
-- [ ] Review privileged capabilities and host-network services.
-- [ ] Keep all management endpoints loopback-only by default.
-- [ ] Document internal CA trust installation for Caddy HTTPS.
+- [ ] Enroll one authorized test endpoint or generate one controlled synthetic event.
+- [ ] Confirm Wazuh receives and classifies it.
+- [ ] Confirm Graylog receives the event or alert.
+- [ ] Record event ID, source timestamp, Graylog timestamp, query, and result.
 
-## I05 — Integration contracts
+**Evidence:** `integration/mvp-event-trace.md`.
 
-For every service-to-service integration, document:
+**Done when:** another operator can reproduce the event and find it using the documented query.
 
-- [ ] Source and destination.
-- [ ] Protocol and port.
-- [ ] Authentication mechanism.
-- [ ] Payload/schema.
-- [ ] Retry and idempotency behavior.
-- [ ] Failure behavior.
-- [ ] Audit trail.
-- [ ] Rollback procedure.
+## M03 — Execute the analyst investigation
 
-Required contracts include Wazuh → Graylog, network sensors → Fluent Bit → Graylog, Graylog/Wazuh → TheHive, TheHive → Shuffle, Shuffle → Velociraptor/Ansible, Greenbone → reporting, and Vault → service restart.
+**Owner:** Detection engineering  
+**Estimate:** 0.5 day  
+**Dependencies:** M02
 
-## I06 — Documentation quality
+- [ ] Write a short investigation procedure.
+- [ ] Identify event source, severity, affected endpoint, and evidence location.
+- [ ] Document false-positive handling and known limitations.
+- [ ] Have a second operator repeat the procedure.
 
-- [ ] Mark every capability as `implemented`, `verified`, `planned`, or `deferred`.
-- [ ] Correct stale `docker-compose` examples where the startup script is required.
-- [ ] Publish MVP resource requirements and supported host assumptions.
-- [ ] Add troubleshooting for DNS, Caddy certificates, Graylog startup, Wazuh enrollment, and volume restore.
-- [ ] Update the docs index with this action plan.
+**Evidence:** `integration/mvp-investigation.md`.
 
----
+## M04 — Prove monitoring and recovery
 
-# 4. Daily execution plan
+**Owner:** Operations  
+**Estimate:** 0.5 day  
+**Dependencies:** M01, F07, F08
 
-Each day should produce a reviewable artifact, test result, or closed issue. Estimates assume one engineer familiar with Compose and Linux.
+- [ ] Confirm Uptime Kuma monitors every MVP service.
+- [ ] Stop one non-critical service.
+- [ ] Confirm outage detection and recovery timestamps.
+- [ ] Confirm backup output and disposable restore evidence are available.
 
-## Day 1 — Baseline and ownership
+**Evidence:** `recovery/mvp-monitor-recovery.md`.
 
-- [ ] Create issues for C01–C08 and assign owners.
-- [ ] Choose the MVP profile and one test event.
-- [ ] Record host OS, engine, Compose provider, CPU, RAM, disk, and network interface.
-- [ ] Capture baseline `config`, service list, and current failure modes.
+## M05 — Perform security/exposure review
 
-**Deliverable:** MVP boundary document and assigned issue list.
+**Owner:** Security reviewer  
+**Estimate:** 0.5 day  
+**Dependencies:** M01–M04
 
-## Day 2 — Caddy and DNS
+- [ ] Review published ports and bind addresses.
+- [ ] Review privileged capabilities and host networking.
+- [ ] Confirm no unsafe credentials remain.
+- [ ] Confirm deferred services and engine sockets are inactive.
+- [ ] Record accepted lab limitations and follow-up risks.
 
-- [ ] Complete C01.
-- [ ] Test CoreDNS resolution and Caddy health.
-- [ ] Test one proxied backend.
+**Evidence:** `security/mvp-review.md`.
 
-**Deliverable:** passing DNS/proxy smoke-test log.
+## M06 — Release the MVP documentation
 
-## Day 3 — Profiles and readiness
+**Owner:** Documentation/release  
+**Estimate:** 0.5 day  
+**Dependencies:** M01–M05
 
-- [ ] Complete C02.
-- [ ] Add or correct healthchecks.
-- [ ] Test clean startup and shutdown for the MVP bundle.
+- [ ] Update README and docs with the MVP start path.
+- [ ] Document supported services, endpoints, resources, credentials bootstrap, and limitations.
+- [ ] Link this plan from `docs/index.md`.
+- [ ] Mark only tested capabilities as verified.
 
-**Deliverable:** supported profile matrix and startup transcript.
+**Evidence:** `releases/mvp-signoff.md`.
 
-## Day 4 — Graylog inputs
+### MVP completion gate
 
-- [ ] Complete the Graylog portion of C03.
-- [ ] Verify GELF/syslog inputs with synthetic events.
-- [ ] Record input IDs and ports.
-
-**Deliverable:** Graylog input validation report.
-
-## Day 5 — Fluent Bit and parsing
-
-- [ ] Complete the Fluent Bit portion of C03.
-- [ ] Generate or replay one event for each enabled source.
-- [ ] Confirm events arrive with useful fields.
-
-**Deliverable:** source-to-Graylog test matrix.
-
-## Day 6 — Wazuh endpoint workflow
-
-- [ ] Complete C04 and C05.
-- [ ] Enroll or simulate one authorized test endpoint.
-- [ ] Document the investigation query and expected alert.
-
-**Deliverable:** verified endpoint telemetry walkthrough.
-
-## Day 7 — Monitoring and credentials
-
-- [ ] Complete C06 and C07.
-- [ ] Make monitor validation runnable locally and in-container.
-- [ ] Confirm startup rejects unsafe defaults.
-
-**Deliverable:** passing monitor report and safe-secret startup test.
-
-## Day 8 — Backup and recovery
-
-- [ ] Complete C08.
-- [ ] Execute a disposable restore test.
-- [ ] Record recovery time and missing data, if any.
-
-**Deliverable:** restore evidence and recovery runbook.
-
-## Day 9 — Documentation and CI gates
-
-- [ ] Complete I01, I02, and I06 for the MVP.
-- [ ] Add Compose, shell, monitor, and image-reference checks to CI.
-- [ ] Update README and docs to remove unverified claims.
-
-**Deliverable:** documentation and CI consistency pass.
-
-## Day 10 — MVP release review
-
-- [ ] Run the full validation checklist from a clean environment.
-- [ ] Review privilege, port exposure, secrets, storage, and restart behavior.
-- [ ] Decide whether the MVP is releasable or requires another fix cycle.
-
-**Deliverable:** signed MVP review with known limitations.
+- [ ] The reduced stack starts successfully from a clean environment.
+- [ ] Every enabled container has a working dependency and healthcheck.
+- [ ] One security event travels through the documented ingestion path.
+- [ ] The event is searchable and investigable.
+- [ ] Uptime Kuma detects service failure and recovery.
+- [ ] Backup and disposable restore tests pass.
+- [ ] Secrets, ports, privileges, and limitations are reviewed.
+- [ ] Documentation matches the tested implementation.
 
 ---
 
-# 5. Follow-on roadmap
+# Daily execution schedule
 
-## Sprint 2 — Network visibility
+Each day must produce a reviewable artifact. Do not begin the next day’s dependent work while the current gate is failed or blocked.
 
-- [ ] Validate Suricata capture scope.
-- [ ] Validate Zeek logs.
-- [ ] Complete sensor-to-Graylog normalization.
+## Day 1 — Freeze scope and remove response automation
+
+**Tasks:** S01–S04  
+**Output:** `compose/mvp-scope.md`, `compose/mvp-config.yml`, `security/mvp-response-exclusion.txt`  
+**Gate:** only MVP services are selected; response automation is excluded.
+
+## Day 2 — Remove privileged access and unsafe defaults
+
+**Tasks:** S05–S07  
+**Output:** socket review, default-secret rejection test, configuration inventory  
+**Gate:** no unsafe defaults or unapproved socket mounts remain.
+
+## Day 3 — Repair Caddy, DNS, and proxy naming
+
+**Tasks:** F01  
+**Output:** `integration/caddy-dns.txt`  
+**Gate:** CoreDNS, Caddy health, and one proxied route pass.
+
+## Day 4 — Repair profiles and readiness
+
+**Tasks:** F02–F03  
+**Output:** `compose/mvp-start-stop.txt`, `compose/mvp-health.txt`  
+**Gate:** clean startup/shutdown and meaningful healthchecks pass.
+
+## Day 5 — Establish Graylog inputs
+
+**Tasks:** F04  
+**Output:** `integration/graylog-inputs.txt`  
+**Gate:** controlled GELF and syslog events are searchable.
+
+## Day 6 — Forward and normalize telemetry
+
+**Tasks:** F05–F06  
+**Output:** source matrix and normalized-field queries  
+**Gate:** every enabled source is searchable with useful fields.
+
+## Day 7 — Monitoring, recovery, and CI checks
+
+**Tasks:** F07–F09  
+**Output:** monitor validation, restore evidence, consistency-check result  
+**Gate:** monitors, restore, and drift checks pass.
+
+## Day 8 — Run the end-to-end event workflow
+
+**Tasks:** M01–M03  
+**Output:** clean-start evidence, event trace, investigation runbook  
+**Gate:** a second operator can reproduce the event and investigation.
+
+## Day 9 — Recovery and security review
+
+**Tasks:** M04–M05  
+**Output:** recovery evidence and security review  
+**Gate:** outage/recovery and exposure review pass.
+
+## Day 10 — MVP release
+
+**Tasks:** M06 and MVP completion gate  
+**Output:** `releases/mvp-signoff.md`  
+**Gate:** release, defer, or return specific failed tasks for correction.
+
+---
+
+# Post-MVP roadmap
+
+Only start after the MVP completion gate passes.
+
+## Phase 2 — Network visibility
+
+- [ ] Add Suricata and Zeek as an opt-in profile.
+- [ ] Validate capture scope on `${SENSOR_INTERFACE}`.
+- [ ] Forward and normalize network telemetry.
 - [ ] Add authorized detection test cases.
 
-## Sprint 3 — Case management
+## Phase 3 — Case management
 
-- [ ] Implement one Wazuh/Graylog-to-TheHive connector.
-- [ ] Define alert-to-case mapping and deduplication.
-- [ ] Test evidence links and analyst workflow.
+- [ ] Add one Wazuh/Graylog-to-TheHive alert path.
+- [ ] Define case creation, severity mapping, deduplication, and evidence links.
+- [ ] Test the analyst case workflow.
 
-## Sprint 4 — Read-only orchestration
+## Phase 4 — Read-only orchestration
 
 - [ ] Connect TheHive to Shuffle.
 - [ ] Add enrichment and lookup workflows.
 - [ ] Add audit logging and failure handling.
 
-## Sprint 5 — Controlled response
+## Phase 5 — Controlled response
 
 - [ ] Test Velociraptor collection on an authorized endpoint.
-- [ ] Test Ansible containment with explicit approval.
+- [ ] Test Ansible containment with explicit human approval.
 - [ ] Add rollback and evidence-preservation checks.
 
-## Sprint 6 — Vulnerability and secrets operations
+## Phase 6 — Vulnerability and secrets operations
 
 - [ ] Validate Greenbone feeds and authorized scans.
 - [ ] Correlate findings with Graylog/TheHive.
 - [ ] Test Vault initialization, rotation, restart, and rollback.
 
-## Sprint 7 — Prevention and advisory intelligence
+## Phase 7 — Prevention and advisory intelligence
 
 - [ ] Verify CrowdSec Caddy enforcement.
 - [ ] Tune Suricata rules before considering inline prevention.
 - [ ] Validate Ghost reports against known evidence.
 - [ ] Keep AI-generated actions advisory and human-reviewed.
 
-## Definition of done for the overall stack
+## Overall definition of done
 
 - [ ] Every advertised data flow has a reproducible test.
-- [ ] Every service has an owner, healthcheck, backup/restore position, and documented dependency set.
+- [ ] Every service has an owner, healthcheck, dependency set, and recovery position.
 - [ ] Every privileged capability has a stated reason and mitigation.
 - [ ] Every response action has approval, audit, and rollback controls.
-- [ ] Documentation distinguishes verified behavior from planned behavior.
-- [ ] The full profile can be started only after the MVP and each extension profile pass independently.
+- [ ] Documentation distinguishes verified, planned, and deferred behavior.
+- [ ] The full profile is optional and is enabled only after each extension profile passes independently.
