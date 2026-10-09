@@ -1,0 +1,123 @@
+name: security-hardening
+
+on:
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: Harbor image tag to pull and scan (for example, v1.1)
+        required: true
+        default: v1.1
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  scan-harbor-images:
+    name: Pull and scan Harbor images
+    if: github.ref == 'refs/heads/security-hardening'
+    runs-on: [self-hosted, laptop]
+    env:
+      HARBOR_HOST: demo.goharbor.io
+      HARBOR_API_BASE: https://demo.goharbor.io/api/v2.0
+      HARBOR_PROJECT: home-security-uk-registry
+      HARBOR_USERNAME: ${{ secrets.HARBORUSER }}
+      HARBOR_PASSWORD: ${{ secrets.HARBORPW }}
+      IMAGE_TAG: ${{ inputs.image_tag }}
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Validate tag and credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ ! "${IMAGE_TAG}" =~ ^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$ ]]; then
+            echo "Invalid image tag: ${IMAGE_TAG}" >&2
+            exit 1
+          fi
+          if [[ -z "${HARBOR_USERNAME}" || -z "${HARBOR_PASSWORD}" ]]; then
+            echo "Set the HARBORUSER and HARBORPW repository secrets." >&2
+            exit 1
+          fi
+
+      - name: Log in to Harbor
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf '%s' "${HARBOR_PASSWORD}" | docker login "${HARBOR_HOST}" \
+            --username "${HARBOR_USERNAME}" --password-stdin
+
+      - name: Pull Harbor images
+        shell: bash
+        run: |
+          set -euo pipefail
+          while IFS= read -r repository; do
+            [[ -z "${repository}" ]] && continue
+            image="${HARBOR_HOST}/${HARBOR_PROJECT}/${repository}:${IMAGE_TAG}"
+            echo "Pulling ${image}"
+            docker pull "${image}"
+          done < .github/harbor-image-repositories.txt
+
+      - name: Scan Harbor artifacts and write reports
+        shell: bash
+        run: |
+          set -euo pipefail
+          report_root="${RUNNER_TEMP}/harbor-security-reports"
+          mkdir -p "${report_root}"
+
+          while IFS= read -r repository; do
+            [[ -z "${repository}" ]] && continue
+            artifact="${HARBOR_API_BASE}/projects/${HARBOR_PROJECT}/repositories/${repository}/artifacts/${IMAGE_TAG}"
+            echo "Requesting Harbor scan for ${repository}:${IMAGE_TAG}"
+            scan_status=$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' \
+              --user "${HARBOR_USERNAME}:${HARBOR_PASSWORD}" \
+              --request POST "${artifact}/scan")
+            if [[ "${scan_status}" != 202 && "${scan_status}" != 200 ]]; then
+              echo "Harbor scan request failed for ${repository}:${IMAGE_TAG} (HTTP ${scan_status})." >&2
+              exit 1
+            fi
+
+            complete=false
+            for attempt in $(seq 1 60); do
+              overview=$(curl --silent --show-error --fail \
+                --user "${HARBOR_USERNAME}:${HARBOR_PASSWORD}" \
+                --header 'X-Accept-Vulnerabilities: application/vnd.security.vulnerability.report; version=1.1' \
+                "${artifact}?with_scan_overview=true" || true)
+              scan_state=$(printf '%s' "${overview}" | jq -r \
+                '[.scan_overview // {} | to_entries[] | select(.key | contains("vulnerability")) | .value.scan_status][0] // empty')
+              if [[ "${scan_state,,}" == "success" ]]; then
+                complete=true
+                break
+              fi
+              if [[ "${scan_state,,}" == "error" || "${scan_state,,}" == "stopped" ]]; then
+                echo "Harbor scan for ${repository}:${IMAGE_TAG} ended with status ${scan_state}." >&2
+                exit 1
+              fi
+              echo "${repository}:${IMAGE_TAG}: scan status '${scan_state:-pending}' (${attempt}/60)"
+              sleep 10
+            done
+            if [[ "${complete}" != true ]]; then
+              echo "Timed out waiting for Harbor scan of ${repository}:${IMAGE_TAG}." >&2
+              exit 1
+            fi
+
+            report="${report_root}/${repository}.json"
+            curl --silent --show-error --fail \
+              --user "${HARBOR_USERNAME}:${HARBOR_PASSWORD}" \
+              --header 'Accept: application/json' \
+              --header 'X-Accept-Vulnerabilities: application/vnd.security.vulnerability.report; version=1.1' \
+              "${artifact}/additions/vulnerabilities" > "${report}"
+            python3 scripts/harbor-report.py \
+              --repository "${repository}" --tag "${IMAGE_TAG}" \
+              --input "${report}" --output-dir "${report_root}"
+          done < .github/harbor-image-repositories.txt
+
+      - name: Upload per-container reports
+        uses: actions/upload-artifact@v4
+        with:
+          name: harbor-trivy-${{ inputs.image_tag }}
+          path: ${{ runner.temp }}/harbor-security-reports/
+          if-no-files-found: error
+          retention-days: 30
