@@ -95,24 +95,35 @@ label_harbor_artifact() {
   image_repo="$1"
   image_reference="$2"
   encoded_repo="$(printf '%s' "$image_repo" | jq -sRr '@uri')"
-  curl -fsS -u "$ROBOT_HARBOR_USERNAME:$ROBOT_HARBOR_PASSWORD" \
+  label_status="$(curl -sS -o /dev/null -w '%{http_code}' \
+    -u "$ROBOT_HARBOR_USERNAME:$ROBOT_HARBOR_PASSWORD" \
     -H 'Content-Type: application/json' \
     -X POST \
     -d "{\"id\":$HARBOR_LABEL_ID}" \
-    "$HARBOR_API/projects/$PROJECT/repositories/$encoded_repo/artifacts/$image_reference/labels" \
-    >/dev/null \
-    || fail "Unable to apply Harbor label $HARBOR_LABEL_NAME to $image_repo@$image_reference"
-  log "Applied Harbor label $HARBOR_LABEL_NAME to $image_repo@$image_reference"
+    "$HARBOR_API/projects/$PROJECT/repositories/$encoded_repo/artifacts/$image_reference/labels")" \
+    || fail "Unable to contact Harbor while applying label $HARBOR_LABEL_NAME to $image_repo@$image_reference"
+  case "$label_status" in
+    2??)
+      log "Applied Harbor label $HARBOR_LABEL_NAME to $image_repo@$image_reference"
+      ;;
+    4??)
+      log "WARNING: Harbor returned HTTP $label_status while applying label $HARBOR_LABEL_NAME to $image_repo@$image_reference; continuing"
+      ;;
+    *)
+      fail "Harbor returned HTTP $label_status while applying label $HARBOR_LABEL_NAME to $image_repo@$image_reference"
+      ;;
+  esac
 }
+
+log "Pruning local container images before pulling current images"
+podman image prune --all --force
 
 # Docker Hub source to Harbor repository used in simplified.compose.yml.
 while IFS=' ' read -r repo source; do
   [ -n "$repo" ] || continue
   target="$REGISTRY/$PROJECT/$repo:latest"
-  if ! podman image exists "$source"; then
-    log "Pulling $source"
-    podman pull "$source"
-  fi
+  log "Pulling current image $source"
+  podman pull "$source"
   podman tag "$source" "$target"
   podman push "$target"
   label_harbor_artifact "$repo" latest
