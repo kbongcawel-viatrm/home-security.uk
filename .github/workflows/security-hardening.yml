@@ -1,4 +1,3 @@
-
 name: security-hardening
 
 on:
@@ -26,54 +25,41 @@ env:
   IMAGE_TAG: ${{ inputs.image_tag }}
 
 jobs:
-  discover:
-    name: Discover release images
+  initial-scan:
+    name: Scan Harbor images
     if: github.ref == 'refs/heads/security-hardening'
     runs-on: ubuntu-latest
-
-    outputs:
-      matrix: ${{ steps.build-matrix.outputs.matrix }}
 
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
 
-      - name: Validate inputs and build matrix
-        id: build-matrix
+      - name: Validate inputs, credentials, and image list
         shell: bash
         run: |
           set -euo pipefail
-
-          if [[ ! "${IMAGE_TAG}" =~ ^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$ ]]; then
-            echo "Invalid image tag: ${IMAGE_TAG}" >&2
+          if [[ ! "${IMAGE_TAG}" =~ ^v?[0-9]+\.[0-9]+$ ]]; then
+            echo "Image tag must use major.minor format (for example, v1.1): ${IMAGE_TAG}" >&2
             exit 1
           fi
-
           if [[ -z "${HARBOR_USERNAME}" || -z "${HARBOR_PASSWORD}" ]]; then
             echo "Set HARBORUSER and HARBORPW repository secrets." >&2
             exit 1
           fi
-
           python3 <<'PY'
-          import json
-          import os
           import re
 
           source = ".github/harbor-image-repositories.txt"
-
           with open(source, encoding="utf-8") as file:
               repositories = [
                   line.strip()
                   for line in file
                   if line.strip() and not line.lstrip().startswith("#")
               ]
-
           if not repositories:
               raise SystemExit(f"No repositories found in {source}")
-
           if len(repositories) != len(set(repositories)):
               raise SystemExit("Duplicate repositories found in the image list.")
-
           for repository in repositories:
               if (
                   not re.fullmatch(r"[A-Za-z0-9._/-]+", repository)
@@ -82,200 +68,348 @@ jobs:
                   or any(not part for part in repository.split("/"))
               ):
                   raise SystemExit(f"Invalid repository name: {repository}")
-
-          matrix = {
-              "include": [
-                  {
-                      "repository": repository,
-                      "artifact_name": repository.replace("/", "_"),
-                  }
-                  for repository in repositories
-              ]
-          }
-
-          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
-              output.write("matrix=" + json.dumps(matrix) + "\n")
-
-          print(f"Selected {len(repositories)} repositories for tag "
-                f"{os.environ['IMAGE_TAG']}.")
+          print(f"Validated {len(repositories)} image repositories.")
           PY
 
-  scan:
-    name: Scan ${{ matrix.repository }}:${{ inputs.image_tag }}
-    needs: discover
-    runs-on: ubuntu-latest
+      - name: Scan images and generate HTML reports
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 .github/workflows/batch-harbor-scan.py \
+            --api-base "${HARBOR_API_BASE}" \
+            --project "${HARBOR_PROJECT}" \
+            --tag "${IMAGE_TAG}" \
+            --repositories-file .github/harbor-image-repositories.txt \
+            --output-dir "${RUNNER_TEMP}/harbor-security-reports" \
+            --parallel 5
 
-    strategy:
-      fail-fast: false
-      max-parallel: 5
-      matrix: ${{ fromJSON(needs.discover.outputs.matrix) }}
+      - name: Upload combined intermediate reports
+        uses: actions/upload-artifact@v4
+        with:
+          name: harbor-security-html-reports-${{ inputs.image_tag }}-${{ github.run_id }}
+          path: ${{ runner.temp }}/harbor-security-reports/
+          if-no-files-found: error
+          retention-days: 1
+
+  consolidate-findings:
+    name: Consolidate vulnerability reports by severity
+    needs: initial-scan
+    runs-on: ubuntu-latest
 
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
 
-      - name: Resolve artifact digest and request fresh scan
-        id: request-scan
+      - name: Download combined HTML reports
+        uses: actions/download-artifact@v4
+        with:
+          name: harbor-security-html-reports-${{ inputs.image_tag }}-${{ github.run_id }}
+          path: ${{ runner.temp }}/harbor-security-reports
+
+      - name: Convert HTML reports to severity-sorted JSON
         shell: bash
-        env:
-          REPOSITORY: ${{ matrix.repository }}
         run: |
           set -euo pipefail
-
-          encode() {
-            jq -rn --arg value "$1" '$value | @uri'
-          }
-
-          project_encoded=$(encode "${HARBOR_PROJECT}")
-          repository_encoded=$(encode "${REPOSITORY}")
-          tag_encoded=$(encode "${IMAGE_TAG}")
-
-          base="${HARBOR_API_BASE}/projects/${project_encoded}/repositories/${repository_encoded}/artifacts"
-
-          # Resolve the selected tag to an immutable digest.
-          curl --silent --show-error --fail \
-            --retry 3 --retry-delay 2 \
-            --user "${HARBOR_USERNAME}:${HARBOR_PASSWORD}" \
-            "${base}/${tag_encoded}" \
-            --output "${RUNNER_TEMP}/artifact.json"
-
-          digest=$(jq -er '.digest | select(type == "string" and length > 0)' \
-            "${RUNNER_TEMP}/artifact.json")
-
-          echo "Resolved ${REPOSITORY}:${IMAGE_TAG} to ${digest}"
-
-          # Request the scan against the digest, not a moving tag.
-          artifact="${base}/$(encode "${digest}")"
-
-          # Record the previous completion marker so an old successful
-          # result cannot immediately satisfy the polling loop.
-          curl --silent --show-error --fail \
-            --user "${HARBOR_USERNAME}:${HARBOR_PASSWORD}" \
-            "${artifact}?with_scan_overview=true" \
-            --output "${RUNNER_TEMP}/overview-before.json"
-
-          previous_time=$(jq -r '
-            [.scan_overview // {} | to_entries[]
-             | select(.key | ascii_downcase | contains("vulnerability"))
-             | (.value.end_time // .value.complete_time // empty)][0] // ""
-          ' "${RUNNER_TEMP}/overview-before.json")
-
-          echo "digest=${digest}" >> "${GITHUB_OUTPUT}"
-          echo "previous_time=${previous_time}" >> "${GITHUB_OUTPUT}"
-
-          status=$(curl --silent --show-error \
-            --output "${RUNNER_TEMP}/scan-response.json" \
-            --write-out '%{http_code}' \
-            --user "${HARBOR_USERNAME}:${HARBOR_PASSWORD}" \
-            --request POST "${artifact}/scan")
-
-          if [[ "${status}" != "202" && "${status}" != "200" ]]; then
-            cat "${RUNNER_TEMP}/scan-response.json" >&2
-            if [[ "${status}" == "401" || "${status}" == "403" ]]; then
-              echo "The Harbor credentials can read this artifact but cannot start its scan. Grant the Actions account the 'Create Scan' permission on project ${HARBOR_PROJECT}." >&2
-            fi
-            echo "Harbor scan request failed: HTTP ${status}" >&2
-            exit 1
-          fi
-
-          echo "Fresh scan requested for ${REPOSITORY}@${digest}"
-
-      - name: Wait for fresh scan and download vulnerability report
-        shell: bash
-        env:
-          REPOSITORY: ${{ matrix.repository }}
-          DIGEST: ${{ steps.request-scan.outputs.digest }}
-          PREVIOUS_TIME: ${{ steps.request-scan.outputs.previous_time }}
-          ARTIFACT_NAME: ${{ matrix.artifact_name }}
-        run: |
-          set -euo pipefail
-
-          encode() {
-            jq -rn --arg value "$1" '$value | @uri'
-          }
-
-          project_encoded=$(encode "${HARBOR_PROJECT}")
-          repository_encoded=$(encode "${REPOSITORY}")
-          digest_encoded=$(encode "${DIGEST}")
-
-          artifact="${HARBOR_API_BASE}/projects/${project_encoded}/repositories/${repository_encoded}/artifacts/${digest_encoded}"
-
-          report_root="${RUNNER_TEMP}/harbor-security-reports"
-          mkdir -p "${report_root}"
-
-          complete=false
-
-          for attempt in $(seq 1 60); do
-            if ! curl --silent --show-error --fail \
-              --user "${HARBOR_USERNAME}:${HARBOR_PASSWORD}" \
-              "${artifact}?with_scan_overview=true" \
-              --output "${RUNNER_TEMP}/overview.json"; then
-              echo "Unable to query scan status (attempt ${attempt}/60)." >&2
-              sleep 10
-              continue
-            fi
-
-            scan_state=$(jq -r '
-              [.scan_overview // {} | to_entries[]
-               | select(.key | ascii_downcase | contains("vulnerability"))
-               | .value.scan_status][0] // ""
-            ' "${RUNNER_TEMP}/overview.json")
-
-            completion_time=$(jq -r '
-              [.scan_overview // {} | to_entries[]
-               | select(.key | ascii_downcase | contains("vulnerability"))
-               | (.value.end_time // .value.complete_time // empty)][0] // ""
-            ' "${RUNNER_TEMP}/overview.json")
-
-            case "${scan_state,,}" in
-              error|stopped)
-                echo "Harbor scan failed: ${scan_state}" >&2
-                exit 1
-                ;;
-              success)
-                if [[ -z "${PREVIOUS_TIME}" ||
-                      "${completion_time}" != "${PREVIOUS_TIME}" && -n "${completion_time}" ]]; then
-                  complete=true
-                  break
-                fi
-                ;;
-            esac
-
-            echo "${REPOSITORY}: status=${scan_state:-pending} (${attempt}/60)"
-            sleep 10
-          done
-
-          if [[ "${complete}" != true ]]; then
-            echo "Timed out waiting for a fresh Harbor scan of ${REPOSITORY}@${DIGEST}." >&2
-            echo "Check the scanner status and completion timestamp returned by your Harbor version." >&2
-            exit 1
-          fi
-
-          report="${report_root}/${ARTIFACT_NAME}.json"
-
-          curl --silent --show-error --fail \
-            --retry 3 --retry-delay 2 \
-            --user "${HARBOR_USERNAME}:${HARBOR_PASSWORD}" \
-            --header 'Accept: application/json' \
-            --header 'X-Accept-Vulnerabilities: application/vnd.security.vulnerability.report; version=1.1' \
-            "${artifact}/additions/vulnerabilities" \
-            --output "${report}"
-
-          jq -e 'type == "object"' "${report}" >/dev/null
-
-          python3 scripts/harbor-report.py \
-            --repository "${REPOSITORY}" \
+          python3 .github/workflows/consolidate-harbor-reports.py \
+            --reports-dir "${RUNNER_TEMP}/harbor-security-reports" \
+            --repositories-file .github/harbor-image-repositories.txt \
             --tag "${IMAGE_TAG}" \
-            --input "${report}" \
-            --output-dir "${report_root}"
+            --output "${RUNNER_TEMP}/harbor-security-reports/consolidated-vulnerabilities.json" \
+            --remediation-output "${RUNNER_TEMP}/harbor-security-reports/remediation-list.json"
 
-          echo "Report generated for ${REPOSITORY}@${DIGEST}"
+      - name: Upload consolidated vulnerability JSON
+        uses: actions/upload-artifact@v4
+        with:
+          name: harbor-security-findings-${{ inputs.image_tag }}-${{ github.run_id }}
+          path: ${{ runner.temp }}/harbor-security-reports/
+          if-no-files-found: error
+          retention-days: 30
 
-      - name: Upload per-container reports
+  patch-and-rebuild:
+    name: Patch packages and rebuild candidate images
+    needs: consolidate-findings
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Download baseline and remediation list
+        uses: actions/download-artifact@v4
+        with:
+          name: harbor-security-findings-${{ inputs.image_tag }}-${{ github.run_id }}
+          path: ${{ runner.temp }}/harbor-security-findings
+
+      - name: Check for fixed High or Critical findings
+        id: candidates
+        shell: bash
+        run: |
+          set -euo pipefail
+          count=$(jq '[.findings[] | select((.severity | ascii_upcase) == "HIGH" or (.severity | ascii_upcase) == "CRITICAL")] | length' \
+            "${RUNNER_TEMP}/harbor-security-findings/remediation-list.json")
+          echo "has_images=$([[ "${count}" -gt 0 ]] && echo true || echo false)" >> "${GITHUB_OUTPUT}"
+          echo "High/Critical findings selected for package remediation: ${count}"
+
+      - name: Log in to Harbor
+        if: steps.candidates.outputs.has_images == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf '%s' "${HARBOR_PASSWORD}" | docker login "${HARBOR_HOST}" \
+            --username "${HARBOR_USERNAME}" --password-stdin
+
+      - name: Rebuild candidate images through Compose
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 .github/workflows/remediate-harbor-images.py build \
+            --report "${RUNNER_TEMP}/harbor-security-findings/remediation-list.json" \
+            --repositories-file .github/harbor-image-repositories.txt \
+            --compose-file security-stack.compose.yml \
+            --compose-env-file .env.example \
+            --project "${HARBOR_PROJECT}" \
+            --registry "${HARBOR_HOST}" \
+            --source-tag "${IMAGE_TAG}" \
+            --run-id "${GITHUB_RUN_ID}" \
+            --bundle-dir "${RUNNER_TEMP}/harbor-candidates"
+
+      - name: Upload candidate image bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: harbor-candidates-${{ github.run_id }}
+          path: ${{ runner.temp }}/harbor-candidates/
+          if-no-files-found: error
+          retention-days: 1
+
+  validate:
+    name: Validate Compose configuration and candidate images
+    needs: patch-and-rebuild
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Download candidate image bundle
+        uses: actions/download-artifact@v4
+        with:
+          name: harbor-candidates-${{ github.run_id }}
+          path: ${{ runner.temp }}/harbor-candidates
+
+      - name: Validate Compose config and installed package versions
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 .github/workflows/remediate-harbor-images.py validate \
+            --compose-file security-stack.compose.yml \
+            --compose-env-file .env.example \
+            --bundle-dir "${RUNNER_TEMP}/harbor-candidates"
+
+      - name: Check for candidate images
+        id: candidates
+        shell: bash
+        run: |
+          set -euo pipefail
+          count=$(jq '.repositories | length' "${RUNNER_TEMP}/harbor-candidates/candidate-manifest.json")
+          echo "has_images=$([[ "${count}" -gt 0 ]] && echo true || echo false)" >> "${GITHUB_OUTPUT}"
+
+      - name: Log in to Harbor to stage candidate images
+        if: steps.candidates.outputs.has_images == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf '%s' "${HARBOR_PASSWORD}" | docker login "${HARBOR_HOST}" \
+            --username "${HARBOR_USERNAME}" --password-stdin
+
+      - name: Push tested candidate tags for Harbor verification scan
+        if: steps.candidates.outputs.has_images == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          jq -r '.candidate_images[]' "${RUNNER_TEMP}/harbor-candidates/candidate-manifest.json" \
+            | while IFS= read -r image; do
+                docker push "${image}"
+              done
+
+      - name: Upload validation result
+        uses: actions/upload-artifact@v4
+        with:
+          name: harbor-validation-${{ github.run_id }}
+          path: ${{ runner.temp }}/harbor-candidates/validation.json
+          if-no-files-found: error
+          retention-days: 30
+
+  verification-scan:
+    name: Scan candidate images and compare with baseline
+    needs: [consolidate-findings, validate]
+    runs-on: ubuntu-latest
+    outputs:
+      publish: ${{ steps.publish-gate.outputs.publish }}
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Download baseline findings
+        uses: actions/download-artifact@v4
+        with:
+          name: harbor-security-findings-${{ inputs.image_tag }}-${{ github.run_id }}
+          path: ${{ runner.temp }}/harbor-baseline
+
+      - name: Download validated candidate manifest
+        uses: actions/download-artifact@v4
+        with:
+          name: harbor-candidates-${{ github.run_id }}
+          path: ${{ runner.temp }}/harbor-candidates
+
+      - name: Prepare verification scan inputs
+        id: verification
+        shell: bash
+        run: |
+          set -euo pipefail
+          manifest="${RUNNER_TEMP}/harbor-candidates/candidate-manifest.json"
+          jq -r '.repositories[].repository' "${manifest}" > "${RUNNER_TEMP}/verification-repositories.txt"
+          count=$(wc -l < "${RUNNER_TEMP}/verification-repositories.txt")
+          tag=$(jq -r '.candidate_tag' "${manifest}")
+          echo "has_images=$([[ "${count}" -gt 0 ]] && echo true || echo false)" >> "${GITHUB_OUTPUT}"
+          echo "tag=${tag}" >> "${GITHUB_OUTPUT}"
+
+      - name: Log in to Harbor for verification scan
+        if: steps.verification.outputs.has_images == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf '%s' "${HARBOR_PASSWORD}" | docker login "${HARBOR_HOST}" \
+            --username "${HARBOR_USERNAME}" --password-stdin
+
+      - name: Scan validated candidate images
+        if: steps.verification.outputs.has_images == 'true'
+        env:
+          PUBLISHED_TAG: ${{ steps.verification.outputs.tag }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 .github/workflows/batch-harbor-scan.py \
+            --api-base "${HARBOR_API_BASE}" \
+            --project "${HARBOR_PROJECT}" \
+            --tag "${PUBLISHED_TAG}" \
+            --repositories-file "${RUNNER_TEMP}/verification-repositories.txt" \
+            --output-dir "${RUNNER_TEMP}/verification-reports" \
+            --parallel 5
+
+      - name: Consolidate verification scan
+        if: steps.verification.outputs.has_images == 'true'
+        env:
+          PUBLISHED_TAG: ${{ steps.verification.outputs.tag }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 .github/workflows/consolidate-harbor-reports.py \
+            --reports-dir "${RUNNER_TEMP}/verification-reports" \
+            --repositories-file "${RUNNER_TEMP}/verification-repositories.txt" \
+            --tag "${PUBLISHED_TAG}" \
+            --output "${RUNNER_TEMP}/verification-findings.json" \
+            --remediation-output "${RUNNER_TEMP}/verification-remediation-list.json"
+
+      - name: Compare verification findings with baseline
+        env:
+          HAS_IMAGES: ${{ steps.verification.outputs.has_images }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "${HAS_IMAGES}" != true ]]; then
+            printf '{"findings":[]}' > "${RUNNER_TEMP}/verification-findings.json"
+          fi
+          python3 .github/workflows/compare-harbor-scans.py \
+            --baseline "${RUNNER_TEMP}/harbor-baseline/consolidated-vulnerabilities.json" \
+            --verification "${RUNNER_TEMP}/verification-findings.json" \
+            --repositories-file "${RUNNER_TEMP}/verification-repositories.txt" \
+            --output "${RUNNER_TEMP}/verification-comparison.json" \
+            --unresolved-list "${RUNNER_TEMP}/unresolved-images.txt" \
+            --registry "${HARBOR_HOST}" \
+            --project "${HARBOR_PROJECT}"
+
+      - name: Upload verification comparison
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: harbor-security-${{ matrix.artifact_name }}-${{ inputs.image_tag }}-${{ github.run_id }}
-          path: ${{ runner.temp }}/harbor-security-reports/
+          name: harbor-verification-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/verification-findings.json
+            ${{ runner.temp }}/verification-comparison.json
+            ${{ runner.temp }}/unresolved-images.txt
           if-no-files-found: warn
+          retention-days: 30
+
+      - name: Gate release on High severity verification
+        id: publish-gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          remaining=$(jq '.remaining_high_critical | length' "${RUNNER_TEMP}/verification-comparison.json")
+          introduced=$(jq '.new_high_critical | length' "${RUNNER_TEMP}/verification-comparison.json")
+          if [[ "${remaining}" -eq 0 && "${introduced}" -eq 0 ]]; then
+            echo "publish=true" >> "${GITHUB_OUTPUT}"
+            echo "Verification passed; release publication may proceed."
+          else
+            echo "publish=false" >> "${GITHUB_OUTPUT}"
+            echo "Verification found unresolved or newly introduced High/Critical findings." >&2
+            cat "${RUNNER_TEMP}/unresolved-images.txt" >&2
+            echo "version-and-push will be skipped."
+          fi
+
+  version-and-push:
+    name: Increment version and push verified images
+    needs: [patch-and-rebuild, validate, verification-scan]
+    if: needs.verification-scan.outputs.publish == 'true'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Download candidate images
+        uses: actions/download-artifact@v4
+        with:
+          name: harbor-candidates-${{ github.run_id }}
+          path: ${{ runner.temp }}/harbor-candidates
+
+      - name: Download validation result
+        uses: actions/download-artifact@v4
+        with:
+          name: harbor-validation-${{ github.run_id }}
+          path: ${{ runner.temp }}/harbor-candidates
+
+      - name: Check for candidate images
+        id: candidates
+        shell: bash
+        run: |
+          set -euo pipefail
+          count=$(jq '.repositories | length' "${RUNNER_TEMP}/harbor-candidates/candidate-manifest.json")
+          echo "has_images=$([[ "${count}" -gt 0 ]] && echo true || echo false)" >> "${GITHUB_OUTPUT}"
+
+      - name: Log in to Harbor
+        if: steps.candidates.outputs.has_images == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf '%s' "${HARBOR_PASSWORD}" | docker login "${HARBOR_HOST}" \
+            --username "${HARBOR_USERNAME}" --password-stdin
+
+      - name: Increment tag and push verified images
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 .github/workflows/remediate-harbor-images.py publish \
+            --project "${HARBOR_PROJECT}" \
+            --registry "${HARBOR_HOST}" \
+            --bundle-dir "${RUNNER_TEMP}/harbor-candidates" \
+            --output-dir "${RUNNER_TEMP}/published"
+
+      - name: Upload published image manifest
+        uses: actions/upload-artifact@v4
+        with:
+          name: harbor-published-${{ github.run_id }}
+          path: ${{ runner.temp }}/published/published-manifest.json
+          if-no-files-found: error
           retention-days: 30
