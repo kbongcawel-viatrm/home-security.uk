@@ -3,7 +3,7 @@ set -eu
 
 COMPOSE_FILE="${COMPOSE_FILE:-security-stack.compose.yml}"
 PROJECT_ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
-PROJECT_NAME="${COMPOSE_PROJECT_NAME:-$(basename "${PROJECT_ROOT}" | tr '[:upper:]' '[:lower:]' | tr -cd 'a-z0-9_-')}"
+PROJECT_NAME="${COMPOSE_PROJECT_NAME:-}"
 PROFILES="${SECSTACK_PROFILES:-all}"
 TIMEOUT_SECONDS="${KILLSWITCH_TIMEOUT_SECONDS:-60}"
 MODE="${1:-stop}"
@@ -14,7 +14,28 @@ log() {
 }
 
 compose() {
-  "${CONTAINER_ENGINE}" compose -f "${COMPOSE_FILE}" "$@"
+  env_args=""
+  if [ -f ".env" ]; then
+    env_args="--env-file .env"
+  fi
+  # shellcheck disable=SC2086
+  "${CONTAINER_ENGINE}" compose ${env_args} -f "${COMPOSE_FILE}" "$@"
+}
+
+load_project_name() {
+  if [ -n "${PROJECT_NAME}" ]; then
+    return 0
+  fi
+  if [ -f ".env" ]; then
+    PROJECT_NAME="$(sed -n 's/^COMPOSE_PROJECT_NAME=//p' .env | tail -n 1)"
+    PROJECT_NAME="${PROJECT_NAME#\"}"
+    PROJECT_NAME="${PROJECT_NAME%\"}"
+    PROJECT_NAME="${PROJECT_NAME#\'}"
+    PROJECT_NAME="${PROJECT_NAME%\'}"
+  fi
+  if [ -z "${PROJECT_NAME}" ]; then
+    PROJECT_NAME="$(basename "${PROJECT_ROOT}" | tr '[:upper:]' '[:lower:]' | tr -cd 'a-z0-9_-')"
+  fi
 }
 
 select_container_engine() {
@@ -106,6 +127,7 @@ main() {
 
   select_container_engine
   cd "${PROJECT_ROOT}"
+  load_project_name
   log "killswitch mode=${MODE} profiles=${PROFILES} project=${PROJECT_NAME}"
 
   case "${MODE}" in

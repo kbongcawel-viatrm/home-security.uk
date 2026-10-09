@@ -18,6 +18,8 @@
 # Greenbone deployments should use each vendor's full hardening guidance,
 # certificate workflow, secret management, and backup design.
 
+name: ${COMPOSE_PROJECT_NAME:-home-security-uk}
+
 x-graylog-logging: &graylog-logging
   driver: gelf
   options:
@@ -55,6 +57,8 @@ services:
     build:
       context: "./The Hands/FQDN proxy - Caddy"
       dockerfile: Dockerfile
+      labels:
+        home-securityuk.project: ${COMPOSE_PROJECT_NAME:-home-security-uk}
     image: localhost/hq-sec/caddy-crowdsec
     container_name: fqdn-proxy
     profiles: ["dns", "all"]
@@ -1284,6 +1288,8 @@ services:
     build:
       context: "./The Eyes/nmap"
       dockerfile: Dockerfile
+      labels:
+        home-securityuk.project: ${COMPOSE_PROJECT_NAME:-home-security-uk}
     image: localhost/hq-sec-stack-nmap-scanner
     container_name: nmap-scanner
     profiles: ["network", "all"]
@@ -1300,6 +1306,8 @@ services:
     build:
       context: "./The Eyes/wireshark"
       dockerfile: Dockerfile
+      labels:
+        home-securityuk.project: ${COMPOSE_PROJECT_NAME:-home-security-uk}
     image: localhost/hq-sec-stack-wireshark-scanner
     container_name: wireshark-scanner
     profiles: ["network", "all"]
