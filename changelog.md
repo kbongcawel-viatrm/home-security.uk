@@ -2,6 +2,7 @@
 
 | Commit Message | Branch | Hash | Date |
 | --- | --- | --- | --- |
+| Add Harbor image security scanning workflow | security-hardening | — | 2026-10-09 |
 | Document Harbor registry operations | main | — | 2026-10-09 |
 | Set Compose project label and tag locally built images | main | — | 2026-10-09 |
 | Remove inactive files and align pipeline docs | main | — | 2026-10-09 |
