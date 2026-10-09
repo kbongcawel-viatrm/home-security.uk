@@ -17,7 +17,7 @@ if [ ! -f .env ]; then
   cp .env.example .env
   log "Created .env from .env.example; review passwords and bind addresses before continuing."
 fi
-for cmd in podman podman-compose python3 curl; do
+for cmd in podman podman-compose python3 curl jq; do
   command -v "$cmd" >/dev/null 2>&1 || fail "Required command not found: $cmd"
 done
 compose() { podman-compose -f "$COMPOSE_FILE" "$@"; }
@@ -62,8 +62,48 @@ for volume in fluent-bit-state uptime-kuma-data wazuh-indexer-data wazuh-manager
   podman volume exists "$name" || podman volume create "$name" >/dev/null
 done
 
-log "Configuring Harbor registry access"
-podman login "$REGISTRY"
+HARBOR_CACHE_HOST="${HARBOR_CACHE_HOST:-$(env_value HARBOR_CACHE_HOST)}"
+HARBOR_CACHE_HOST="${HARBOR_CACHE_HOST:-$REGISTRY}"
+HARBOR_CACHE_USERNAME="${HARBOR_CACHE_USERNAME:-$(env_value HARBOR_CACHE_USERNAME)}"
+HARBOR_CACHE_PASSWORD="${HARBOR_CACHE_PASSWORD:-$(env_value HARBOR_CACHE_PASSWORD)}"
+ROBOT_HARBOR_USERNAME="${ROBOT_HARBOR_USERNAME:-$(env_value ROBOT_HARBOR_USERNAME)}"
+ROBOT_HARBOR_PASSWORD="${ROBOT_HARBOR_PASSWORD:-$(env_value ROBOT_HARBOR_PASSWORD)}"
+[ -n "$HARBOR_CACHE_USERNAME" ] || fail "HARBOR_CACHE_USERNAME is missing from .env"
+[ -n "$HARBOR_CACHE_PASSWORD" ] || fail "HARBOR_CACHE_PASSWORD is missing from .env"
+[ -n "$ROBOT_HARBOR_USERNAME" ] || fail "ROBOT_HARBOR_USERNAME is missing from .env"
+[ -n "$ROBOT_HARBOR_PASSWORD" ] || fail "ROBOT_HARBOR_PASSWORD is missing from .env"
+
+log "Configuring Harbor cache registry access"
+printf '%s\n' "$HARBOR_CACHE_PASSWORD" | podman login "$HARBOR_CACHE_HOST" \
+  --username "$HARBOR_CACHE_USERNAME" --password-stdin
+
+log "Configuring Harbor push registry access"
+printf '%s\n' "$ROBOT_HARBOR_PASSWORD" | podman login "$REGISTRY" \
+  --username "$ROBOT_HARBOR_USERNAME" --password-stdin
+
+HARBOR_API="https://$REGISTRY/api/v2.0"
+HARBOR_LABEL_NAME="home-security-uk"
+HARBOR_PROJECT_ID="$(curl -fsS -u "$ROBOT_HARBOR_USERNAME:$ROBOT_HARBOR_PASSWORD" \
+  "$HARBOR_API/projects?name=$PROJECT" | jq -er '.[0].project_id')" \
+  || fail "Unable to resolve Harbor project $PROJECT"
+HARBOR_LABEL_ID="$(curl -fsS -u "$ROBOT_HARBOR_USERNAME:$ROBOT_HARBOR_PASSWORD" \
+  "$HARBOR_API/labels?scope=p&project_id=$HARBOR_PROJECT_ID" | \
+  jq -er --arg label "$HARBOR_LABEL_NAME" '.[] | select(.name == $label) | .id' | head -n 1)" \
+  || fail "Unable to resolve Harbor project label $HARBOR_LABEL_NAME"
+
+label_harbor_artifact() {
+  image_repo="$1"
+  image_reference="$2"
+  encoded_repo="$(printf '%s' "$image_repo" | jq -sRr '@uri')"
+  curl -fsS -u "$ROBOT_HARBOR_USERNAME:$ROBOT_HARBOR_PASSWORD" \
+    -H 'Content-Type: application/json' \
+    -X POST \
+    -d "{\"id\":$HARBOR_LABEL_ID}" \
+    "$HARBOR_API/projects/$PROJECT/repositories/$encoded_repo/artifacts/$image_reference/labels" \
+    >/dev/null \
+    || fail "Unable to apply Harbor label $HARBOR_LABEL_NAME to $image_repo@$image_reference"
+  log "Applied Harbor label $HARBOR_LABEL_NAME to $image_repo@$image_reference"
+}
 
 # Docker Hub source to Harbor repository used in simplified.compose.yml.
 while IFS=' ' read -r repo source; do
@@ -75,6 +115,7 @@ while IFS=' ' read -r repo source; do
   fi
   podman tag "$source" "$target"
   podman push "$target"
+  label_harbor_artifact "$repo" latest
 done <<'IMAGES'
 secdns docker.io/coredns/coredns:latest
 caddy docker.io/library/caddy:latest
