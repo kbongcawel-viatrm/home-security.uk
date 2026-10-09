@@ -120,6 +120,8 @@ podman image prune --all --force
 
 WAZUH_VERSION="${WAZUH_VERSION:-$(env_value WAZUH_VERSION)}"
 WAZUH_VERSION="${WAZUH_VERSION:-4.14.4}"
+GRAYLOG_VERSION="${GRAYLOG_VERSION:-$(env_value GRAYLOG_VERSION)}"
+GRAYLOG_VERSION="${GRAYLOG_VERSION:-7.0.13}"
 
 # Docker Hub source to Harbor repository used in simplified.compose.yml.
 while IFS=' ' read -r repo source; do
@@ -127,6 +129,9 @@ while IFS=' ' read -r repo source; do
   case "$repo" in
     wazuh-indexer|wazuh-manager|wazuh-dashboard)
       source="docker.io/wazuh/$repo:$WAZUH_VERSION"
+      ;;
+    graylog-datanode|graylog)
+      source="docker.io/graylog/$repo:$GRAYLOG_VERSION"
       ;;
   esac
   target="$REGISTRY/$PROJECT/$repo:latest"
@@ -142,8 +147,8 @@ wazuh-indexer versioned
 wazuh-manager versioned
 wazuh-dashboard versioned
 graylog-mongo docker.io/library/mongo:latest
-graylog-datanode docker.io/graylog/graylog-datanode:latest
-graylog docker.io/graylog/graylog:latest
+graylog-datanode versioned
+graylog versioned
 log-forwarder docker.io/fluent/fluent-bit:latest
 uptime-kuma docker.io/louislam/uptime-kuma:latest
 uptime-kuma-sync docker.io/library/python:3.12-alpine
