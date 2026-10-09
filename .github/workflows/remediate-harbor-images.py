@@ -16,14 +16,32 @@ USER_TOKEN = re.compile(r"^[A-Za-z0-9_.:-]+$")
 
 
 def latest_image_ref(image):
-    """Return the same registry/repository with a mutable latest tag."""
+    """Return the same registry/repository with a latest tag when available.
+
+    Harbor images are not guaranteed to have a :latest tag, so we prefer it when it
+    exists and otherwise fall back to the original image reference.
+    """
     image = str(image).strip()
     if not image or "@" in image:
         raise ValueError(f"Cannot derive a latest tag from Compose image {image!r}.")
-    last_component = image.rsplit("/", 1)[-1]
-    if ":" in last_component:
-        return image.rsplit(":", 1)[0] + ":latest"
-    return image + ":latest"
+
+    base = image.rsplit(":", 1)[0] if ":" in image.rsplit("/", 1)[-1] else image
+    latest_ref = base + ":latest"
+
+    # Prefer :latest only if it exists; otherwise, use the original tag.
+    try:
+        result = subprocess.run(
+            ["docker", "manifest", "inspect", latest_ref],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        if result.returncode == 0:
+            return latest_ref
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        pass
+
+    return image
 
 
 def run(command, *, capture=False):
