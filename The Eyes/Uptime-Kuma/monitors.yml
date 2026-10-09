@@ -1,14 +1,21 @@
-# Desired Uptime Kuma monitors for hq-sec-stack.
-#
-# Keep this file synchronized with security-stack.compose.yml, The Hands/CoreDNS/hosts.hq-sec,
-# The Hands/FQDN proxy - Caddy/Caddyfile, and README.md whenever services or endpoints change.
+# MVP Uptime Kuma monitors for simplified.compose.yml and the
+# home-security.local namespace.
+# HTTP checks validate DNS, Caddy, TLS, and the target service together.
 
 defaults:
   interval: 60
-  retry_interval: 60
+  retry_interval: 30
   max_retries: 3
 
 monitors:
+  - name: Caddy health
+    type: http
+    url: https://caddy.home-security.local/healthz
+    category: Support Services
+    fqdn: caddy.home-security.local
+    endpoint: https://caddy.home-security.local/healthz
+    ignore_tls: true
+
   - name: CoreDNS UDP
     type: port
     host: secdns
@@ -16,171 +23,21 @@ monitors:
     category: Support Services
     endpoint: secdns:53/udp
 
-  - name: CoreDNS Host UDP
-    type: port
-    host: 10.77.0.53
-    port: 53
-    category: Support Services
-    endpoint: 10.77.0.53:53/udp
-
-  - name: FQDN Proxy Health
-    type: http
-    url: http://fqdn-proxy/healthz
-    category: Support Services
-    fqdn: fqdn-proxy.hq-sec.local
-    endpoint: http://fqdn-proxy/healthz
-
-  - name: CoreDNS Container
-    type: http
-    url: http://container-health-exporter:8080/container/secdns
-    category: Support Services
-    endpoint: container:secdns
-
-  - name: FQDN Proxy Container
-    type: http
-    url: http://container-health-exporter:8080/container/fqdn-proxy
-    category: Support Services
-    endpoint: container:fqdn-proxy
-
-  - name: Reports Dashboard
-    type: http
-    url: http://reports.hq-sec.local
-    category: Support Services
-    fqdn: reports.hq-sec.local
-    endpoint: http://caddy:80
-
-  - name: Reports Dashboard Container
-    type: http
-    url: http://container-health-exporter:8080/container/caddy
-    category: Support Services
-    endpoint: container:caddy
-
   - name: Uptime Kuma
     type: http
-    url: http://uptime.hq-sec.local
+    url: https://uptimekuma.home-security.local/
     category: Support Services
-    fqdn: uptime.hq-sec.local
-    endpoint: http://uptime-kuma:3001
-
-  - name: Uptime Kuma Sync
-    type: http
-    url: http://container-health-exporter:8080/container/uptime-kuma-sync
-    category: Support Services
-    endpoint: container:uptime-kuma-sync
-
-  - name: Ghost API
-    type: http
-    url: http://ghost.hq-sec.local/api/tags
-    category: Support Services
-    fqdn: ghost.hq-sec.local
-    endpoint: http://ghost:11434/api/tags
-
-  - name: Ghost Container
-    type: http
-    url: http://container-health-exporter:8080/container/ghost
-    category: Support Services
-    endpoint: container:ghost
-
-  - name: Ghost Model Pull Completed
-    type: http
-    url: http://container-health-exporter:8080/container/ghost-model-pull?mode=completed
-    category: Support Services
-    endpoint: container:ghost-model-pull
-
-  - name: Vault Health
-    type: http
-    url: http://vault.hq-sec.local/v1/sys/health
-    category: Support Services
-    fqdn: vault.hq-sec.local
-    endpoint: http://vault:8200/v1/sys/health
-    accepted_statuscodes:
-      - 200-299
-      - 429
-      - 472
-      - 473
-      - 501
-      - 503
-
-  - name: Vault Rotator
-    type: http
-    url: http://container-health-exporter:8080/container/vault-rotator
-    category: Support Services
-    endpoint: container:vault-rotator
-
-  - name: Wazuh Dashboard
-    type: http
-    url: https://wazuh.hq-sec.local
-    category: Visualization & SIEM
-    fqdn: wazuh.hq-sec.local
-    endpoint: https://wazuh-dashboard:5601
+    fqdn: uptimekuma.home-security.local
+    endpoint: https://uptimekuma.home-security.local/
     ignore_tls: true
 
-  - name: Wazuh Dashboard Container
+  - name: Graylog web/API
     type: http
-    url: http://container-health-exporter:8080/container/wazuh-dashboard
+    url: https://graylog.home-security.local/api/system/lbstatus
     category: Visualization & SIEM
-    endpoint: container:wazuh-dashboard
-
-  - name: Wazuh API
-    type: http
-    url: https://wazuh-api.hq-sec.local
-    category: Visualization & SIEM
-    fqdn: wazuh-api.hq-sec.local
-    endpoint: https://wazuh-manager:55000
+    fqdn: graylog.home-security.local
+    endpoint: https://graylog.home-security.local/api/system/lbstatus
     ignore_tls: true
-
-  - name: Wazuh Manager Container
-    type: http
-    url: http://container-health-exporter:8080/container/wazuh-manager
-    category: Visualization & SIEM
-    endpoint: container:wazuh-manager
-
-  - name: Wazuh Indexer
-    type: http
-    url: https://wazuh-indexer.hq-sec.local
-    category: Visualization & SIEM
-    fqdn: wazuh-indexer.hq-sec.local
-    endpoint: https://wazuh-indexer:9200
-    ignore_tls: true
-
-  - name: Wazuh Indexer Container
-    type: http
-    url: http://container-health-exporter:8080/container/wazuh-indexer
-    category: Visualization & SIEM
-    endpoint: container:wazuh-indexer
-
-  - name: Wazuh Agent Events
-    type: port
-    host: wazuh-manager
-    port: 1514
-    category: Visualization & SIEM
-    endpoint: wazuh-manager:1514/udp
-
-  - name: Wazuh Enrollment
-    type: port
-    host: wazuh-manager
-    port: 1515
-    category: Visualization & SIEM
-    endpoint: wazuh-manager:1515/tcp
-
-  - name: Graylog Web
-    type: http
-    url: http://graylog.hq-sec.local
-    category: Visualization & SIEM
-    fqdn: graylog.hq-sec.local
-    endpoint: http://graylog:9000
-
-  - name: Graylog Container
-    type: http
-    url: http://container-health-exporter:8080/container/graylog
-    category: Visualization & SIEM
-    endpoint: container:graylog
-
-  - name: Graylog API Load Balancer
-    type: http
-    url: http://graylog:9000/api/system/lbstatus
-    category: Visualization & SIEM
-    endpoint: http://graylog:9000/api/system/lbstatus
 
   - name: Graylog GELF UDP
     type: port
@@ -189,339 +46,73 @@ monitors:
     category: Visualization & SIEM
     endpoint: graylog:12201/udp
 
-  - name: Graylog Syslog TCP
+  - name: Graylog syslog TCP
     type: port
     host: graylog
     port: 1514
     category: Visualization & SIEM
     endpoint: graylog:1514/tcp
 
-  - name: Graylog Mongo
+  - name: Graylog MongoDB
     type: port
     host: graylog-mongo
     port: 27017
     category: Visualization & SIEM
-    endpoint: graylog-mongo:27017
-
-  - name: Graylog Mongo Container
-    type: http
-    url: http://container-health-exporter:8080/container/graylog-mongo
-    category: Visualization & SIEM
-    endpoint: container:graylog-mongo
+    endpoint: graylog-mongo:27017/tcp
 
   - name: Graylog Data Node
-    type: http
-    url: http://graylog-datanode:9200
-    category: Visualization & SIEM
-    endpoint: http://graylog-datanode:9200
-
-  - name: Graylog Data Node Container
-    type: http
-    url: http://container-health-exporter:8080/container/graylog-datanode
-    category: Visualization & SIEM
-    endpoint: container:graylog-datanode
-
-  - name: Graylog Bootstrap Completed
-    type: http
-    url: http://container-health-exporter:8080/container/graylog-bootstrap?mode=completed
-    category: Visualization & SIEM
-    endpoint: container:graylog-bootstrap
-
-  - name: TheHive
-    type: http
-    url: http://thehive.hq-sec.local
-    category: Incident Response & Automation
-    fqdn: thehive.hq-sec.local
-    endpoint: http://thehive:9000
-
-  - name: TheHive Container
-    type: http
-    url: http://container-health-exporter:8080/container/thehive
-    category: Incident Response & Automation
-    endpoint: container:thehive
-
-  - name: Shuffle Frontend
-    type: http
-    url: http://shuffle.hq-sec.local
-    category: Incident Response & Automation
-    fqdn: shuffle.hq-sec.local
-    endpoint: http://shuffle-frontend:80
-
-  - name: Shuffle Frontend Container
-    type: http
-    url: http://container-health-exporter:8080/container/shuffle-frontend
-    category: Incident Response & Automation
-    endpoint: container:shuffle-frontend
-
-  - name: Shuffle API
-    type: http
-    url: http://shuffle-api.hq-sec.local
-    category: Incident Response & Automation
-    fqdn: shuffle-api.hq-sec.local
-    endpoint: http://shuffle-backend:5001
-
-  - name: Shuffle Backend Container
-    type: http
-    url: http://container-health-exporter:8080/container/shuffle-backend
-    category: Incident Response & Automation
-    endpoint: container:shuffle-backend
-
-  - name: Shuffle Orborus Container
-    type: http
-    url: http://container-health-exporter:8080/container/shuffle-orborus
-    category: Incident Response & Automation
-    endpoint: container:shuffle-orborus
-
-  - name: Shuffle OpenSearch Container
-    type: http
-    url: http://container-health-exporter:8080/container/shuffle-opensearch
-    category: Incident Response & Automation
-    endpoint: container:shuffle-opensearch
-
-  - name: Velociraptor GUI
-    type: http
-    url: http://velociraptor.hq-sec.local
-    category: Incident Response & Automation
-    fqdn: velociraptor.hq-sec.local
-    endpoint: http://velociraptor:8889
-
-  - name: Velociraptor Container
-    type: http
-    url: http://container-health-exporter:8080/container/velociraptor
-    category: Incident Response & Automation
-    endpoint: container:velociraptor
-
-  - name: Velociraptor Frontend
     type: port
-    host: velociraptor
-    port: 8000
-    category: Incident Response & Automation
-    endpoint: velociraptor:8000/tcp
+    host: graylog-datanode
+    port: 9200
+    category: Visualization & SIEM
+    endpoint: graylog-datanode:9200/tcp
 
-  - name: Greenbone GSA
+  - name: Wazuh dashboard
     type: http
-    url: https://greenbone.hq-sec.local
-    category: Vulnerability & Hardening
-    fqdn: greenbone.hq-sec.local
-    endpoint: https://greenbone-nginx:443
+    url: https://wazuh.home-security.local/status
+    category: Visualization & SIEM
+    fqdn: wazuh.home-security.local
+    endpoint: https://wazuh.home-security.local/status
     ignore_tls: true
+    accepted_statuscodes:
+      - 200-299
+      - 401
+      - 403
 
-  - name: Greenbone Nginx Container
+  - name: Wazuh manager API
     type: http
-    url: http://container-health-exporter:8080/container/greenbone-nginx
-    category: Vulnerability & Hardening
-    endpoint: container:greenbone-nginx
+    url: https://wazuh-api.home-security.local/
+    category: Visualization & SIEM
+    fqdn: wazuh-api.home-security.local
+    endpoint: https://wazuh-api.home-security.local/
+    ignore_tls: true
+    accepted_statuscodes:
+      - 200-299
+      - 401
+      - 403
 
-  - name: Greenbone Redirect Port
+  - name: Wazuh indexer
+    type: http
+    url: https://wazuh-indexer.home-security.local/
+    category: Visualization & SIEM
+    fqdn: wazuh-indexer.home-security.local
+    endpoint: https://wazuh-indexer.home-security.local/
+    ignore_tls: true
+    accepted_statuscodes:
+      - 200-299
+      - 401
+      - 403
+
+  - name: Wazuh agent events UDP
     type: port
-    host: greenbone-nginx
-    port: 9392
-    category: Vulnerability & Hardening
-    endpoint: greenbone-nginx:9392/tcp
+    host: wazuh-manager
+    port: 1514
+    category: Visualization & SIEM
+    endpoint: wazuh-manager:1514/udp
 
-  - name: Greenbone PostgreSQL
+  - name: Wazuh enrollment TCP
     type: port
-    host: pg-gvm
-    port: 5432
-    category: Vulnerability & Hardening
-    endpoint: pg-gvm:5432/tcp
-
-  - name: Greenbone PostgreSQL Container
-    type: http
-    url: http://container-health-exporter:8080/container/pg-gvm
-    category: Vulnerability & Hardening
-    endpoint: container:pg-gvm
-
-  - name: OpenVAS Scanner API
-    type: http
-    url: http://openvasd:80
-    category: Vulnerability & Hardening
-    endpoint: http://openvasd:80
-
-  - name: OpenVAS Scanner API Container
-    type: http
-    url: http://container-health-exporter:8080/container/openvasd
-    category: Vulnerability & Hardening
-    endpoint: container:openvasd
-
-  - name: Redis for Greenbone
-    type: port
-    host: redis-server
-    port: 6379
-    category: Vulnerability & Hardening
-    endpoint: redis-server:6379/tcp
-
-  - name: Redis for Greenbone Container
-    type: http
-    url: http://container-health-exporter:8080/container/redis-server
-    category: Vulnerability & Hardening
-    endpoint: container:redis-server
-
-  - name: Greenbone Vulnerability Tests
-    type: http
-    url: http://container-health-exporter:8080/container/vulnerability-tests
-    category: Vulnerability & Hardening
-    endpoint: container:vulnerability-tests
-
-  - name: Greenbone Notus Data
-    type: http
-    url: http://container-health-exporter:8080/container/notus-data
-    category: Vulnerability & Hardening
-    endpoint: container:notus-data
-
-  - name: Greenbone SCAP Data
-    type: http
-    url: http://container-health-exporter:8080/container/scap-data
-    category: Vulnerability & Hardening
-    endpoint: container:scap-data
-
-  - name: Greenbone CERT Bund Data
-    type: http
-    url: http://container-health-exporter:8080/container/cert-bund-data
-    category: Vulnerability & Hardening
-    endpoint: container:cert-bund-data
-
-  - name: Greenbone DFN CERT Data
-    type: http
-    url: http://container-health-exporter:8080/container/dfn-cert-data
-    category: Vulnerability & Hardening
-    endpoint: container:dfn-cert-data
-
-  - name: Greenbone Data Objects
-    type: http
-    url: http://container-health-exporter:8080/container/data-objects
-    category: Vulnerability & Hardening
-    endpoint: container:data-objects
-
-  - name: Greenbone Report Formats
-    type: http
-    url: http://container-health-exporter:8080/container/report-formats
-    category: Vulnerability & Hardening
-    endpoint: container:report-formats
-
-  - name: Greenbone GPG Data Completed
-    type: http
-    url: http://container-health-exporter:8080/container/gpg-data?mode=completed
-    category: Vulnerability & Hardening
-    endpoint: container:gpg-data
-
-  - name: Greenbone Migrator Completed
-    type: http
-    url: http://container-health-exporter:8080/container/pg-gvm-migrator?mode=completed
-    category: Vulnerability & Hardening
-    endpoint: container:pg-gvm-migrator
-
-  - name: Greenbone Manager
-    type: http
-    url: http://container-health-exporter:8080/container/gvmd
-    category: Vulnerability & Hardening
-    endpoint: container:gvmd
-
-  - name: Greenbone GSA Data
-    type: http
-    url: http://container-health-exporter:8080/container/gsa
-    category: Vulnerability & Hardening
-    endpoint: container:gsa
-
-  - name: Greenbone GSAD
-    type: http
-    url: http://container-health-exporter:8080/container/gsad
-    category: Vulnerability & Hardening
-    endpoint: container:gsad
-
-  - name: Greenbone Config Completed
-    type: http
-    url: http://container-health-exporter:8080/container/gvm-config?mode=completed
-    category: Vulnerability & Hardening
-    endpoint: container:gvm-config
-
-  - name: OpenVAS Configure Completed
-    type: http
-    url: http://container-health-exporter:8080/container/configure-openvas?mode=completed
-    category: Vulnerability & Hardening
-    endpoint: container:configure-openvas
-
-  - name: OpenVAS Log Tail
-    type: http
-    url: http://container-health-exporter:8080/container/openvas
-    category: Vulnerability & Hardening
-    endpoint: container:openvas
-
-  - name: OSPD OpenVAS
-    type: http
-    url: http://container-health-exporter:8080/container/ospd-openvas
-    category: Vulnerability & Hardening
-    endpoint: container:ospd-openvas
-
-  - name: GVM Tools
-    type: http
-    url: http://container-health-exporter:8080/container/gvm-tools
-    category: Vulnerability & Hardening
-    endpoint: container:gvm-tools
-
-  - name: Container Health Exporter
-    type: http
-    url: http://container-health-exporter:8080/healthz
-    category: Support Services
-    endpoint: http://container-health-exporter:8080/healthz
-
-  - name: Container Health Exporter Container
-    type: http
-    url: http://container-health-exporter:8080/container/container-health-exporter
-    category: Support Services
-    endpoint: container:container-health-exporter
-
-  - name: Suricata Container
-    type: http
-    url: http://container-health-exporter:8080/container/suricata
-    category: Network Monitoring
-    endpoint: container:suricata
-
-  - name: Suricata Rule Updater
-    type: http
-    url: http://container-health-exporter:8080/container/suricata-rules-update
-    category: Network Monitoring
-    endpoint: container:suricata-rules-update
-
-  - name: Zeek Container
-    type: http
-    url: http://container-health-exporter:8080/container/zeek
-    category: Network Monitoring
-    endpoint: container:zeek
-
-  - name: Log Forwarder
-    type: http
-    url: http://container-health-exporter:8080/container/log-forwarder
-    category: Support Services
-    endpoint: container:log-forwarder
-
-  - name: Ghost Log Assessor
-    type: http
-    url: http://container-health-exporter:8080/container/ghost-assessor
-    category: Support Services
-    endpoint: container:ghost-assessor
-
-  - name: Volume Backup
-    type: http
-    url: http://container-health-exporter:8080/container/volume-backup
-    category: Support Services
-    endpoint: container:volume-backup
-
-  - name: Container Vulnerability Scanner
-    type: http
-    url: http://container-health-exporter:8080/container/container-vuln-scanner
-    category: Vulnerability & Hardening
-    endpoint: container:container-vuln-scanner
-
-  - name: Ansible IR
-    type: http
-    url: http://container-health-exporter:8080/container/ansible-ir
-    category: Incident Response & Automation
-    endpoint: container:ansible-ir
-
-  - name: osquery
-    type: http
-    url: http://container-health-exporter:8080/container/osquery
-    category: Vulnerability & Hardening
-    endpoint: container:osquery
-
+    host: wazuh-manager
+    port: 1515
+    category: Visualization & SIEM
+    endpoint: wazuh-manager:1515/tcp

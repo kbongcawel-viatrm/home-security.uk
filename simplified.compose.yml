@@ -24,10 +24,19 @@ services:
     image: demo.goharbor.io/home-security-uk-registry/caddy:latest
     container_name: caddy
     profiles: ["mvp"]
+    ports:
+      - "${FQDN_HTTP_HOST_IP:-127.0.0.1}:${FQDN_HTTP_PORT:-8081}:80"
+      - "${FQDN_HTTPS_HOST_IP:-127.0.0.1}:${FQDN_HTTPS_PORT:-8443}:443"
     volumes:
+      - "./The Hands/FQDN proxy - Caddy/Caddyfile:/etc/caddy/Caddyfile:ro"
       - "./The Hands/reports/dashboard-ui:/usr/share/caddy:ro"
       - "./The Hands/reports/data:/usr/share/caddy/reports:ro"
-    networks: [secnet]
+      - caddy-logs:/var/log/caddy
+    networks:
+      secnet:
+        ipv4_address: "${FQDN_PROXY_IPV4:-10.77.0.80}"
+        aliases:
+          - fqdn-proxy
     restart: unless-stopped
 
   wazuh-indexer:
@@ -211,6 +220,8 @@ services:
     volumes:
       - uptime-kuma-data:/app/data
     networks: [secnet]
+    dns:
+      - "${SECDNS_IPV4:-10.77.0.53}"
     ports:
       - "${STACK_BIND_IP:-127.0.0.1}:${UPTIME_KUMA_PORT:-3002}:3001"
     restart: unless-stopped
@@ -233,10 +244,12 @@ services:
       UPTIME_KUMA_SYNC_INTERVAL_SECONDS: "${UPTIME_KUMA_SYNC_INTERVAL_SECONDS:-21600}"
       UPTIME_KUMA_SYNC_RUN_ON_STARTUP: "true"
     volumes:
-      - "./The Eyes/Uptime-Kuma/monitors-mvp.yml:/uptime-kuma/monitors.yml:ro"
+      - "./The Eyes/Uptime-Kuma/monitors.yml:/uptime-kuma/monitors.yml:ro"
       - "./The Eyes/Uptime-Kuma/scripts:/uptime-kuma/scripts:ro"
     entrypoint: ["python", "/uptime-kuma/scripts/sync-monitors.py"]
     networks: [secnet]
+    dns:
+      - "${SECDNS_IPV4:-10.77.0.53}"
     restart: unless-stopped
     depends_on:
       uptime-kuma:
@@ -252,6 +265,7 @@ networks:
 
 volumes:
   fluent-bit-state:
+  caddy-logs:
   uptime-kuma-data:
   wazuh-indexer-data:
   wazuh-manager-data:

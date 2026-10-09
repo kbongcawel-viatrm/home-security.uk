@@ -17,7 +17,7 @@ if [ ! -f .env ]; then
   cp .env.example .env
   log "Created .env from .env.example; review passwords and bind addresses before continuing."
 fi
-for cmd in podman podman-compose python3 curl firewall-cmd sudo; do
+for cmd in podman podman-compose python3 curl; do
   command -v "$cmd" >/dev/null 2>&1 || fail "Required command not found: $cmd"
 done
 compose() { podman-compose -f "$COMPOSE_FILE" "$@"; }
@@ -35,8 +35,9 @@ compose --profile mvp config > /tmp/home-security-mvp-compose.yml \
   || fail "podman-compose config failed"
 
 log "Whitelisting published ports from simplified.compose.yml"
-if [ -z "$FIREWALL_ZONE" ]; then FIREWALL_ZONE="$(sudo firewall-cmd --get-default-zone)"; fi
-python3 -c 'import yaml; d=yaml.safe_load(open("/tmp/home-security-mvp-compose.yml")); out=set();
+if command -v firewall-cmd >/dev/null 2>&1 && command -v sudo >/dev/null 2>&1; then
+  if [ -z "$FIREWALL_ZONE" ]; then FIREWALL_ZONE="$(sudo firewall-cmd --get-default-zone)"; fi
+  python3 -c 'import yaml; d=yaml.safe_load(open("/tmp/home-security-mvp-compose.yml")); out=set();
 for s in d.get("services",{}).values():
  for p in s.get("ports",[]):
   if isinstance(p,dict) and p.get("published"): out.add(str(p["published"])+"/"+p.get("protocol","tcp"))
@@ -44,11 +45,14 @@ for s in d.get("services",{}).values():
    parts=p.rsplit(":",2)
    if len(parts)==3: out.add(parts[1]+"/"+parts[2].split("/",1)[-1] if "/" in parts[2] else parts[1]+"/tcp")
 print("\n".join(sorted(out)))' |
-while IFS= read -r port; do
-  sudo firewall-cmd --permanent --zone="$FIREWALL_ZONE" --add-port="$port" >/dev/null
-  log "Allowed $port in $FIREWALL_ZONE"
-done
-sudo firewall-cmd --reload >/dev/null
+  while IFS= read -r port; do
+    sudo firewall-cmd --permanent --zone="$FIREWALL_ZONE" --add-port="$port" >/dev/null
+    log "Allowed $port in $FIREWALL_ZONE"
+  done
+  sudo firewall-cmd --reload >/dev/null
+else
+  log "WARNING: firewall-cmd/sudo unavailable; skipping firewalld port configuration (MVP ports default to loopback)."
+fi
 
 log "Creating persistent volumes (Compose will mount the declared volumes at startup)"
 project_name="$(sed -n 's/^COMPOSE_PROJECT_NAME=//p' .env | tail -n 1 | tr -d '"\047')"
@@ -140,7 +144,7 @@ if [ -z "$UPTIME_KUMA_PASSWORD" ]; then
 fi
 
 log "Waiting for the Uptime Kuma sync helper to provision MVP monitors"
-monitor_names="MVP CoreDNS UDP|MVP Caddy HTTP|MVP Wazuh Indexer|MVP Wazuh Manager Events|MVP Wazuh Enrollment|MVP Wazuh Dashboard|MVP Graylog API|MVP Graylog GELF UDP|MVP Fluent Bit Health|MVP Graylog Data Node|MVP MongoDB|MVP Uptime Kuma"
+monitor_names="Caddy health|CoreDNS UDP|Uptime Kuma|Graylog web/API|Graylog GELF UDP|Graylog syslog TCP|Graylog MongoDB|Graylog Data Node|Wazuh dashboard|Wazuh manager API|Wazuh indexer|Wazuh agent events UDP|Wazuh enrollment TCP"
 deadline=$(( $(date +%s) + HEALTH_TIMEOUT_SECONDS ))
 while [ "$(date +%s)" -lt "$deadline" ]; do
   monitor_log="$(podman logs uptime-kuma-sync 2>&1 || true)"
