@@ -36,7 +36,7 @@ def next_tag(source_tag):
     return f"{prefix or ''}{major}.{int(minor) + 1}"
 
 
-def make_plan(report_path, repositories_path, source_tag):
+def make_plan(report_path, repositories_path, source_tag, compose_service=None):
     allowed_repositories = {
         line.strip()
         for line in repositories_path.read_text(encoding="utf-8").splitlines()
@@ -85,7 +85,7 @@ def make_plan(report_path, repositories_path, source_tag):
     return [
         {
             "repository": repository,
-            "service": repository,
+            "service": compose_service or repository,
             "packages": [
                 {"name": package, "version": version}
                 for package, version in sorted(packages.items())
@@ -120,7 +120,9 @@ def dockerfile_for(base_image, packages, original_user):
 
 
 def dockerfile_build(args):
-    candidates = make_plan(args.report, args.repositories_file, args.source_tag)
+    candidates = make_plan(
+        args.report, args.repositories_file, args.source_tag, args.compose_service
+    )
     candidate_tag = f"candidate-{args.run_id}"
     args.bundle_dir.mkdir(parents=True, exist_ok=True)
     compose_result = run(
@@ -324,6 +326,7 @@ def main():
     build.add_argument("--project", required=True)
     build.add_argument("--registry", required=True)
     build.add_argument("--source-tag", required=True)
+    build.add_argument("--compose-service")
     build.add_argument("--run-id", required=True)
     build.add_argument("--bundle-dir", required=True, type=Path)
     build.set_defaults(func=dockerfile_build)

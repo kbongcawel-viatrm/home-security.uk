@@ -1,0 +1,535 @@
+name: single-container-security-patching
+
+on:
+  workflow_dispatch:
+    inputs:
+      image_ref:
+        description: Full Harbor reference, for example demo.goharbor.io/home-security-uk-registry/caddy:v1.1
+        required: true
+        type: string
+      compose_service:
+        description: Compose service to rebuild and validate for this image
+        required: true
+        type: string
+      application_test_script:
+        description: Repository-relative test script; it receives the candidate image reference as $1
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: single-container-security-patching-${{ inputs.image_ref }}
+  cancel-in-progress: false
+
+env:
+  HARBOR_HOST: demo.goharbor.io
+  HARBOR_API_BASE: https://demo.goharbor.io/api/v2.0
+  HARBOR_PROJECT: home-security-uk-registry
+  HARBOR_USERNAME: ${{ secrets.HARBORUSER }}
+  HARBOR_PASSWORD: ${{ secrets.HARBORPW }}
+
+jobs:
+  initial-scan:
+    name: Scan the selected Harbor image with Trivy
+    runs-on: ubuntu-latest
+    outputs:
+      repository: ${{ steps.validate.outputs.repository }}
+      image_tag: ${{ steps.validate.outputs.image_tag }}
+      compose_service: ${{ steps.validate.outputs.compose_service }}
+      test_script: ${{ steps.validate.outputs.test_script }}
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Validate image, service, and test inputs
+        id: validate
+        env:
+          IMAGE_REF: ${{ inputs.image_ref }}
+          COMPOSE_SERVICE: ${{ inputs.compose_service }}
+          TEST_SCRIPT: ${{ inputs.application_test_script }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY' >> "${GITHUB_OUTPUT}"
+          import os
+          import re
+          from pathlib import Path
+
+          reference = os.environ["IMAGE_REF"]
+          match = re.fullmatch(
+              r"demo\.goharbor\.io/home-security-uk-registry/"
+              r"(?P<repository>[A-Za-z0-9._/-]+):v?(?P<major>[0-9]+)\.(?P<minor>[0-9]+)",
+              reference,
+          )
+          if not match:
+              raise SystemExit(
+                  "image_ref must be a full reference in the configured Harbor project "
+                  "with a numeric major.minor tag."
+              )
+          repository = match.group("repository")
+          if repository.startswith("/") or any(
+              part in ("", ".", "..") for part in repository.split("/")
+          ):
+              raise SystemExit("image_ref contains an invalid repository path.")
+          if not re.fullmatch(r"[a-z0-9][a-z0-9_-]*", os.environ["COMPOSE_SERVICE"]):
+              raise SystemExit("compose_service must be a lowercase Compose service name.")
+
+          script = Path(os.environ["TEST_SCRIPT"])
+          if (
+              "\n" in os.environ["TEST_SCRIPT"]
+              or "\r" in os.environ["TEST_SCRIPT"]
+              or script.is_absolute()
+              or ".." in script.parts
+              or not script.is_file()
+          ):
+              raise SystemExit("application_test_script must name a file in this checkout.")
+          if not os.environ.get("HARBOR_USERNAME") or not os.environ.get("HARBOR_PASSWORD"):
+              raise SystemExit("Configure HARBORUSER and HARBORPW repository secrets.")
+
+          print(f"repository={repository}")
+          print(f"image_tag={reference.rsplit(':', 1)[1]}")
+          print(f"compose_service={os.environ['COMPOSE_SERVICE']}")
+          print(f"test_script={script.as_posix()}")
+          PY
+
+      - name: Prepare Harbor repository input
+        env:
+          REPOSITORY: ${{ steps.validate.outputs.repository }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf '%s\n' "${REPOSITORY}" > "${RUNNER_TEMP}/repositories.txt"
+
+      - name: Log in to Harbor
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf '%s' "${HARBOR_PASSWORD}" | docker login "${HARBOR_HOST}" \
+            --username "${HARBOR_USERNAME}" --password-stdin
+
+      - name: Request and collect the initial Trivy scan
+        env:
+          REPOSITORY: ${{ steps.validate.outputs.repository }}
+          IMAGE_TAG: ${{ steps.validate.outputs.image_tag }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 .github/workflows/batch-harbor-scan.py \
+            --api-base "${HARBOR_API_BASE}" \
+            --project "${HARBOR_PROJECT}" \
+            --tag "${IMAGE_TAG}" \
+            --repositories-file "${RUNNER_TEMP}/repositories.txt" \
+            --output-dir "${RUNNER_TEMP}/initial-reports" \
+            --parallel 1
+          cp "${RUNNER_TEMP}/repositories.txt" "${RUNNER_TEMP}/initial-reports/repositories.txt"
+
+      - name: Retain initial raw and rendered scan reports
+        uses: actions/upload-artifact@v4
+        with:
+          name: harbor-image-initial-${{ github.run_id }}
+          path: ${{ runner.temp }}/initial-reports/
+          if-no-files-found: error
+          retention-days: 90
+
+  consolidate-findings:
+    name: Consolidate and prioritize findings
+    needs: initial-scan
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Download initial scan reports
+        uses: actions/download-artifact@v4
+        with:
+          name: harbor-image-initial-${{ github.run_id }}
+          path: ${{ runner.temp }}/initial-reports
+
+      - name: Consolidate CVEs and build remediation review plan
+        env:
+          REPOSITORY: ${{ needs.initial-scan.outputs.repository }}
+          IMAGE_TAG: ${{ needs.initial-scan.outputs.image_tag }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf '%s\n' "${REPOSITORY}" > "${RUNNER_TEMP}/repositories.txt"
+          python3 .github/workflows/consolidate-harbor-reports.py \
+            --reports-dir "${RUNNER_TEMP}/initial-reports" \
+            --repositories-file "${RUNNER_TEMP}/repositories.txt" \
+            --tag "${IMAGE_TAG}" \
+            --output "${RUNNER_TEMP}/initial-reports/consolidated-vulnerabilities.json" \
+            --remediation-output "${RUNNER_TEMP}/initial-reports/remediation-list.json"
+          repository_file_name="${REPOSITORY//\//_}.json"
+          python3 .github/workflows/prioritize-harbor-plan.py \
+            --findings "${RUNNER_TEMP}/initial-reports/consolidated-vulnerabilities.json" \
+            --raw-report "${RUNNER_TEMP}/initial-reports/${repository_file_name}" \
+            --repository "${REPOSITORY}" \
+            --image-ref "demo.goharbor.io/${HARBOR_PROJECT}/${REPOSITORY}:${IMAGE_TAG}" \
+            --output "${RUNNER_TEMP}/initial-reports/remediation-plan.json"
+          jq '{image_tag, findings: [.findings[] | select((.severity | ascii_upcase) == "HIGH" or (.severity | ascii_upcase) == "CRITICAL")]}' \
+            "${RUNNER_TEMP}/initial-reports/remediation-plan.json" \
+            > "${RUNNER_TEMP}/initial-reports/approved-remediation-input.json"
+
+      - name: Upload baseline, prioritized plan, and scan reports
+        uses: actions/upload-artifact@v4
+        with:
+          name: harbor-image-review-${{ github.run_id }}
+          path: ${{ runner.temp }}/initial-reports/
+          if-no-files-found: error
+          retention-days: 90
+
+  review-remediation:
+    name: Review proposed package and base-image changes
+    needs: [initial-scan, consolidate-findings]
+    runs-on: ubuntu-latest
+    environment: security-remediation-review
+
+    steps:
+      - name: Download remediation review artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: harbor-image-review-${{ github.run_id }}
+          path: ${{ runner.temp }}/review
+
+      - name: Summarize proposed changes for reviewers
+        env:
+          IMAGE_REF: ${{ inputs.image_ref }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          plan="${RUNNER_TEMP}/review/remediation-plan.json"
+          {
+            echo "## Harbor remediation review"
+            echo
+            echo "Image: `${IMAGE_REF}`"
+            echo
+            echo "Review the `remediation-plan.json` artifact before approving this environment."
+            echo
+            jq -r '.base_image_update.reason, "", (.findings[] | "- \(.severity) \(.cve) / \(.package): Fixed In \(.fixed_in // "unavailable"); exploitability \(.exploitability)")' "${plan}"
+          } >> "${GITHUB_STEP_SUMMARY}"
+
+  patch-and-rebuild:
+    name: Patch and rebuild candidate image
+    needs: [initial-scan, review-remediation]
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Download reviewed remediation plan
+        uses: actions/download-artifact@v4
+        with:
+          name: harbor-image-review-${{ github.run_id }}
+          path: ${{ runner.temp }}/review
+
+      - name: Require an actionable fixed High or Critical finding
+        shell: bash
+        run: |
+          set -euo pipefail
+          count=$(jq '.findings | length' "${RUNNER_TEMP}/review/approved-remediation-input.json")
+          if [[ "${count}" -eq 0 ]]; then
+            echo "No High/Critical package fixes were available; refusing to build or publish an unchanged image." >&2
+            exit 1
+          fi
+
+      - name: Log in to Harbor
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf '%s' "${HARBOR_PASSWORD}" | docker login "${HARBOR_HOST}" \
+            --username "${HARBOR_USERNAME}" --password-stdin
+
+      - name: Build the proposed package updates through Compose
+        env:
+          REPOSITORY: ${{ needs.initial-scan.outputs.repository }}
+          IMAGE_TAG: ${{ needs.initial-scan.outputs.image_tag }}
+          COMPOSE_SERVICE: ${{ needs.initial-scan.outputs.compose_service }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf '%s\n' "${REPOSITORY}" > "${RUNNER_TEMP}/repositories.txt"
+          python3 .github/workflows/remediate-harbor-images.py build \
+            --report "${RUNNER_TEMP}/review/approved-remediation-input.json" \
+            --repositories-file "${RUNNER_TEMP}/repositories.txt" \
+            --compose-file security-stack.compose.yml \
+            --compose-env-file .env.example \
+            --project "${HARBOR_PROJECT}" \
+            --registry "${HARBOR_HOST}" \
+            --source-tag "${IMAGE_TAG}" \
+            --compose-service "${COMPOSE_SERVICE}" \
+            --run-id "${GITHUB_RUN_ID}" \
+            --bundle-dir "${RUNNER_TEMP}/candidate"
+
+      - name: Upload candidate image bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: harbor-image-candidate-${{ github.run_id }}
+          path: ${{ runner.temp }}/candidate/
+          if-no-files-found: error
+          retention-days: 2
+
+  validate:
+    name: Validate Compose and run application tests
+    needs: [initial-scan, patch-and-rebuild]
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Download candidate image bundle
+        uses: actions/download-artifact@v4
+        with:
+          name: harbor-image-candidate-${{ github.run_id }}
+          path: ${{ runner.temp }}/candidate
+
+      - name: Validate Compose and exact package versions
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 .github/workflows/remediate-harbor-images.py validate \
+            --compose-file security-stack.compose.yml \
+            --compose-env-file .env.example \
+            --bundle-dir "${RUNNER_TEMP}/candidate"
+
+      - name: Run the selected application's test script
+        env:
+          TEST_SCRIPT: ${{ needs.initial-scan.outputs.test_script }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          candidate_image=$(jq -er '.candidate_images | select(length == 1) | .[0]' \
+            "${RUNNER_TEMP}/candidate/candidate-manifest.json")
+          bash "${TEST_SCRIPT}" "${candidate_image}"
+
+      - name: Log in to Harbor to stage validated candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf '%s' "${HARBOR_PASSWORD}" | docker login "${HARBOR_HOST}" \
+            --username "${HARBOR_USERNAME}" --password-stdin
+
+      - name: Push candidate tag for Harbor verification scan
+        shell: bash
+        run: |
+          set -euo pipefail
+          jq -er '.candidate_images[]' "${RUNNER_TEMP}/candidate/candidate-manifest.json" \
+            | while IFS= read -r image; do docker push "${image}"; done
+
+      - name: Retain validation result with candidate bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: harbor-image-validation-${{ github.run_id }}
+          path: ${{ runner.temp }}/candidate/validation.json
+          if-no-files-found: error
+          retention-days: 90
+
+  verification-scan:
+    name: Rescan candidate and compare with baseline
+    needs: [initial-scan, consolidate-findings, validate]
+    runs-on: ubuntu-latest
+    outputs:
+      publish: ${{ steps.gate.outputs.publish }}
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Download baseline reports and candidate bundle
+        uses: actions/download-artifact@v4
+        with:
+          pattern: harbor-image-*-${{ github.run_id }}
+          path: ${{ runner.temp }}/artifacts
+          merge-multiple: false
+
+      - name: Prepare candidate scan inputs
+        id: candidate
+        env:
+          REPOSITORY: ${{ needs.initial-scan.outputs.repository }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          candidate_dir="${RUNNER_TEMP}/artifacts/harbor-image-candidate-${GITHUB_RUN_ID}"
+          jq -r '.candidate_tag' "${candidate_dir}/candidate-manifest.json" > "${RUNNER_TEMP}/candidate-tag.txt"
+          tag=$(cat "${RUNNER_TEMP}/candidate-tag.txt")
+          printf '%s\n' "${REPOSITORY}" > "${RUNNER_TEMP}/verification-repositories.txt"
+          echo "tag=${tag}" >> "${GITHUB_OUTPUT}"
+
+      - name: Log in to Harbor for verification scan
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf '%s' "${HARBOR_PASSWORD}" | docker login "${HARBOR_HOST}" \
+            --username "${HARBOR_USERNAME}" --password-stdin
+
+      - name: Scan candidate image with Harbor Trivy
+        env:
+          CANDIDATE_TAG: ${{ steps.candidate.outputs.tag }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 .github/workflows/batch-harbor-scan.py \
+            --api-base "${HARBOR_API_BASE}" \
+            --project "${HARBOR_PROJECT}" \
+            --tag "${CANDIDATE_TAG}" \
+            --repositories-file "${RUNNER_TEMP}/verification-repositories.txt" \
+            --output-dir "${RUNNER_TEMP}/verification-reports" \
+            --parallel 1
+          python3 .github/workflows/consolidate-harbor-reports.py \
+            --reports-dir "${RUNNER_TEMP}/verification-reports" \
+            --repositories-file "${RUNNER_TEMP}/verification-repositories.txt" \
+            --tag "${CANDIDATE_TAG}" \
+            --output "${RUNNER_TEMP}/verification-findings.json" \
+            --remediation-output "${RUNNER_TEMP}/verification-remediation.json"
+
+      - name: Compare candidate findings against initial baseline
+        env:
+          REPOSITORY: ${{ needs.initial-scan.outputs.repository }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          baseline_dir="${RUNNER_TEMP}/artifacts/harbor-image-review-${GITHUB_RUN_ID}"
+          python3 .github/workflows/compare-harbor-scans.py \
+            --baseline "${baseline_dir}/consolidated-vulnerabilities.json" \
+            --verification "${RUNNER_TEMP}/verification-findings.json" \
+            --repositories-file "${RUNNER_TEMP}/verification-repositories.txt" \
+            --output "${RUNNER_TEMP}/verification-comparison.json" \
+            --unresolved-list "${RUNNER_TEMP}/unresolved-images.txt" \
+            --registry "${HARBOR_HOST}" \
+            --project "${HARBOR_PROJECT}"
+
+      - name: Retain verification findings and comparison
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: harbor-image-verification-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/verification-reports/
+            ${{ runner.temp }}/verification-findings.json
+            ${{ runner.temp }}/verification-comparison.json
+            ${{ runner.temp }}/unresolved-images.txt
+          if-no-files-found: warn
+          retention-days: 90
+
+      - name: Gate release on verification result
+        id: gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ $(jq -r '.status' "${RUNNER_TEMP}/verification-comparison.json") == passed ]]; then
+            echo "publish=true" >> "${GITHUB_OUTPUT}"
+            echo "Candidate scan passed; release approval may proceed."
+          else
+            echo "publish=false" >> "${GITHUB_OUTPUT}"
+            echo "Candidate has unresolved baseline High/Critical CVEs or new High/Critical CVEs." >&2
+            cat "${RUNNER_TEMP}/unresolved-images.txt" >&2
+          fi
+
+  approve-release:
+    name: Approve verified release
+    needs: verification-scan
+    if: needs.verification-scan.outputs.publish == 'true'
+    runs-on: ubuntu-latest
+    environment: harbor-release
+    steps:
+      - name: Record release approval checkpoint
+        run: echo "Protected harbor-release environment approved this verified image."
+
+  version-and-push:
+    name: Increment version, publish, and record digest
+    needs: [initial-scan, approve-release]
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Download validated candidate and scan reports
+        uses: actions/download-artifact@v4
+        with:
+          pattern: harbor-image-*-${{ github.run_id }}
+          path: ${{ runner.temp }}/artifacts
+          merge-multiple: false
+
+      - name: Log in to Harbor
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf '%s' "${HARBOR_PASSWORD}" | docker login "${HARBOR_HOST}" \
+            --username "${HARBOR_USERNAME}" --password-stdin
+
+      - name: Increment tag and push verified image
+        shell: bash
+        run: |
+          set -euo pipefail
+          candidate_dir="${RUNNER_TEMP}/artifacts/harbor-image-candidate-${GITHUB_RUN_ID}"
+          cp "${RUNNER_TEMP}/artifacts/harbor-image-validation-${GITHUB_RUN_ID}/validation.json" \
+            "${candidate_dir}/validation.json"
+          python3 .github/workflows/remediate-harbor-images.py publish \
+            --project "${HARBOR_PROJECT}" \
+            --registry "${HARBOR_HOST}" \
+            --bundle-dir "${candidate_dir}" \
+            --output-dir "${RUNNER_TEMP}/published"
+
+      - name: Resolve published Harbor digest and create release record
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import base64
+          import json
+          import os
+          from pathlib import Path
+          from urllib.error import HTTPError
+          from urllib.parse import quote
+          from urllib.request import Request, urlopen
+
+          host = os.environ["HARBOR_HOST"]
+          project = os.environ["HARBOR_PROJECT"]
+          manifest_path = Path(os.environ["RUNNER_TEMP"]) / "published/published-manifest.json"
+          manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+          token = base64.b64encode(
+              f"{os.environ['HARBOR_USERNAME']}:{os.environ['HARBOR_PASSWORD']}".encode()
+          ).decode()
+          digests = {}
+          for repository in manifest["repositories"]:
+              url = (
+                  f"{os.environ['HARBOR_API_BASE']}/projects/{quote(project, safe='')}"
+                  f"/repositories/{quote(repository, safe='')}/artifacts/"
+                  f"{quote(manifest['published_tag'], safe='')}"
+              )
+              request = Request(url, headers={"Authorization": f"Basic {token}"})
+              try:
+                  with urlopen(request, timeout=60) as response:
+                      artifact = json.load(response)
+              except HTTPError as error:
+                  raise SystemExit(f"Could not resolve published digest for {repository}: HTTP {error.code}")
+              digest = artifact.get("digest")
+              if not isinstance(digest, str) or not digest.startswith("sha256:"):
+                  raise SystemExit(f"Harbor returned no valid digest for {repository}")
+              digests[repository] = digest
+
+          manifest["digests"] = digests
+          manifest["scan_artifacts"] = {
+              "baseline": f"harbor-image-review-{os.environ['GITHUB_RUN_ID']}",
+              "verification": f"harbor-image-verification-{os.environ['GITHUB_RUN_ID']}",
+          }
+          manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+          print(json.dumps({"published_tag": manifest["published_tag"], "digests": digests}, indent=2))
+          PY
+
+      - name: Retain release manifest and scan reports
+        uses: actions/upload-artifact@v4
+        with:
+          name: harbor-image-release-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/published/published-manifest.json
+            ${{ runner.temp }}/artifacts/harbor-image-review-${{ github.run_id }}/
+            ${{ runner.temp }}/artifacts/harbor-image-verification-${{ github.run_id }}/
+          if-no-files-found: error
+          retention-days: 90
