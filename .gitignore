@@ -21,3 +21,6 @@ wsl/
 wsl/*
 client.keys
 .buildx-cache/
+/scripts/Cline_0.0.45_x86_64.rpm
+/scripts/*.rpm
+/scripts/Cline_*.rpm
