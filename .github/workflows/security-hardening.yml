@@ -107,7 +107,7 @@ jobs:
 
     strategy:
       fail-fast: false
-      max-parallel: 5
+      max-parallel: 10
       matrix: ${{ fromJSON(needs.discover.outputs.matrix) }}
 
     steps:
@@ -171,6 +171,9 @@ jobs:
 
           if [[ "${status}" != "202" && "${status}" != "200" ]]; then
             cat "${RUNNER_TEMP}/scan-response.json" >&2
+            if [[ "${status}" == "401" || "${status}" == "403" ]]; then
+              echo "The Harbor credentials can read this artifact but cannot start its scan. Grant the Actions account the 'Create Scan' permission on project ${HARBOR_PROJECT}." >&2
+            fi
             echo "Harbor scan request failed: HTTP ${status}" >&2
             exit 1
           fi
