@@ -142,7 +142,7 @@ label_harbor_artifact() {
 
 harbor_cache_reference() {
   image="$1"
-  cache_project="${HARBOR_CACHE_PROJECT_DOCKERIO:-${HARBOR_CACHE_PROJECT_DOCKERHUB:-$HARBOR_CACHE_PROJECT_DEFAULT}}"
+  cache_project="${HARBOR_CACHE_PROJECT_DEFAULT:-${HARBOR_CACHE_PROJECT_DOCKERIO:-${HARBOR_CACHE_PROJECT_DOCKERHUB:-}}}"
   [ -n "$cache_project" ] || return 1
   case "$image" in
     docker.io/*)
