@@ -1,10 +1,11 @@
+
 name: security-hardening
 
 on:
   workflow_dispatch:
     inputs:
       image_tag:
-        description: Harbor image tag to pull and scan (for example, v1.1)
+        description: Harbor image tag to scan (for example, v1.1)
         required: true
         default: v1.1
         type: string
@@ -12,112 +13,266 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: security-hardening-${{ github.ref }}-${{ inputs.image_tag }}
+  cancel-in-progress: false
+
+env:
+  HARBOR_HOST: demo.goharbor.io
+  HARBOR_API_BASE: https://demo.goharbor.io/api/v2.0
+  HARBOR_PROJECT: home-security-uk-registry
+  HARBOR_USERNAME: ${{ secrets.HARBORUSER }}
+  HARBOR_PASSWORD: ${{ secrets.HARBORPW }}
+  IMAGE_TAG: ${{ inputs.image_tag }}
+
 jobs:
-  scan-harbor-images:
-    name: Pull and scan Harbor images
+  discover:
+    name: Discover release images
     if: github.ref == 'refs/heads/security-hardening'
-    runs-on: [ubuntu-latest]
-    env:
-      HARBOR_HOST: demo.goharbor.io
-      HARBOR_API_BASE: https://demo.goharbor.io/api/v2.0
-      HARBOR_PROJECT: home-security-uk-registry
-      HARBOR_USERNAME: ${{ secrets.HARBORUSER }}
-      HARBOR_PASSWORD: ${{ secrets.HARBORPW }}
-      IMAGE_TAG: ${{ inputs.image_tag }}
+    runs-on: ubuntu-latest
+
+    outputs:
+      matrix: ${{ steps.build-matrix.outputs.matrix }}
 
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
 
-      - name: Validate tag and credentials
+      - name: Validate inputs and build matrix
+        id: build-matrix
         shell: bash
         run: |
           set -euo pipefail
+
           if [[ ! "${IMAGE_TAG}" =~ ^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$ ]]; then
             echo "Invalid image tag: ${IMAGE_TAG}" >&2
             exit 1
           fi
+
           if [[ -z "${HARBOR_USERNAME}" || -z "${HARBOR_PASSWORD}" ]]; then
-            echo "Set the HARBORUSER and HARBORPW repository secrets." >&2
+            echo "Set HARBORUSER and HARBORPW repository secrets." >&2
             exit 1
           fi
 
-      - name: Log in to Harbor
-        shell: bash
-        run: |
-          set -euo pipefail
-          printf '%s' "${HARBOR_PASSWORD}" | docker login "${HARBOR_HOST}" \
-            --username "${HARBOR_USERNAME}" --password-stdin
+          python3 <<'PY'
+          import json
+          import os
+          import re
 
-      - name: Pull Harbor images
-        shell: bash
-        run: |
-          set -euo pipefail
-          while IFS= read -r repository; do
-            [[ -z "${repository}" ]] && continue
-            image="${HARBOR_HOST}/${HARBOR_PROJECT}/${repository}:${IMAGE_TAG}"
-            echo "Pulling ${image}"
-            docker pull "${image}"
-          done < .github/harbor-image-repositories.txt
+          source = ".github/harbor-image-repositories.txt"
 
-      - name: Scan Harbor artifacts and write reports
+          with open(source, encoding="utf-8") as file:
+              repositories = [
+                  line.strip()
+                  for line in file
+                  if line.strip() and not line.lstrip().startswith("#")
+              ]
+
+          if not repositories:
+              raise SystemExit(f"No repositories found in {source}")
+
+          if len(repositories) != len(set(repositories)):
+              raise SystemExit("Duplicate repositories found in the image list.")
+
+          for repository in repositories:
+              if (
+                  not re.fullmatch(r"[A-Za-z0-9._/-]+", repository)
+                  or repository.startswith("/")
+                  or ".." in repository.split("/")
+                  or any(not part for part in repository.split("/"))
+              ):
+                  raise SystemExit(f"Invalid repository name: {repository}")
+
+          matrix = {
+              "include": [
+                  {
+                      "repository": repository,
+                      "artifact_name": repository.replace("/", "_"),
+                  }
+                  for repository in repositories
+              ]
+          }
+
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
+              output.write("matrix=" + json.dumps(matrix) + "\n")
+
+          print(f"Selected {len(repositories)} repositories for tag "
+                f"{os.environ['IMAGE_TAG']}.")
+          PY
+
+  scan:
+    name: Scan ${{ matrix.repository }}:${{ inputs.image_tag }}
+    needs: discover
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      max-parallel: 5
+      matrix: ${{ fromJSON(needs.discover.outputs.matrix) }}
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Resolve artifact digest and request fresh scan
+        id: request-scan
         shell: bash
+        env:
+          REPOSITORY: ${{ matrix.repository }}
         run: |
           set -euo pipefail
+
+          encode() {
+            jq -rn --arg value "$1" '$value | @uri'
+          }
+
+          project_encoded=$(encode "${HARBOR_PROJECT}")
+          repository_encoded=$(encode "${REPOSITORY}")
+          tag_encoded=$(encode "${IMAGE_TAG}")
+
+          base="${HARBOR_API_BASE}/projects/${project_encoded}/repositories/${repository_encoded}/artifacts"
+
+          # Resolve the selected tag to an immutable digest.
+          curl --silent --show-error --fail \
+            --retry 3 --retry-delay 2 \
+            --user "${HARBOR_USERNAME}:${HARBOR_PASSWORD}" \
+            "${base}/${tag_encoded}" \
+            --output "${RUNNER_TEMP}/artifact.json"
+
+          digest=$(jq -er '.digest | select(type == "string" and length > 0)' \
+            "${RUNNER_TEMP}/artifact.json")
+
+          echo "Resolved ${REPOSITORY}:${IMAGE_TAG} to ${digest}"
+
+          # Request the scan against the digest, not a moving tag.
+          artifact="${base}/$(encode "${digest}")"
+
+          # Record the previous completion marker so an old successful
+          # result cannot immediately satisfy the polling loop.
+          curl --silent --show-error --fail \
+            --user "${HARBOR_USERNAME}:${HARBOR_PASSWORD}" \
+            "${artifact}?with_scan_overview=true" \
+            --output "${RUNNER_TEMP}/overview-before.json"
+
+          previous_time=$(jq -r '
+            [.scan_overview // {} | to_entries[]
+             | select(.key | ascii_downcase | contains("vulnerability"))
+             | (.value.end_time // .value.complete_time // empty)][0] // ""
+          ' "${RUNNER_TEMP}/overview-before.json")
+
+          echo "digest=${digest}" >> "${GITHUB_OUTPUT}"
+          echo "previous_time=${previous_time}" >> "${GITHUB_OUTPUT}"
+
+          status=$(curl --silent --show-error \
+            --output "${RUNNER_TEMP}/scan-response.json" \
+            --write-out '%{http_code}' \
+            --user "${HARBOR_USERNAME}:${HARBOR_PASSWORD}" \
+            --request POST "${artifact}/scan")
+
+          if [[ "${status}" != "202" && "${status}" != "200" ]]; then
+            cat "${RUNNER_TEMP}/scan-response.json" >&2
+            echo "Harbor scan request failed: HTTP ${status}" >&2
+            exit 1
+          fi
+
+          echo "Fresh scan requested for ${REPOSITORY}@${digest}"
+
+      - name: Wait for fresh scan and download vulnerability report
+        shell: bash
+        env:
+          REPOSITORY: ${{ matrix.repository }}
+          DIGEST: ${{ steps.request-scan.outputs.digest }}
+          PREVIOUS_TIME: ${{ steps.request-scan.outputs.previous_time }}
+          ARTIFACT_NAME: ${{ matrix.artifact_name }}
+        run: |
+          set -euo pipefail
+
+          encode() {
+            jq -rn --arg value "$1" '$value | @uri'
+          }
+
+          project_encoded=$(encode "${HARBOR_PROJECT}")
+          repository_encoded=$(encode "${REPOSITORY}")
+          digest_encoded=$(encode "${DIGEST}")
+
+          artifact="${HARBOR_API_BASE}/projects/${project_encoded}/repositories/${repository_encoded}/artifacts/${digest_encoded}"
+
           report_root="${RUNNER_TEMP}/harbor-security-reports"
           mkdir -p "${report_root}"
 
-          while IFS= read -r repository; do
-            [[ -z "${repository}" ]] && continue
-            artifact="${HARBOR_API_BASE}/projects/${HARBOR_PROJECT}/repositories/${repository}/artifacts/${IMAGE_TAG}"
-            echo "Requesting Harbor scan for ${repository}:${IMAGE_TAG}"
-            scan_status=$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' \
-              --user "${HARBOR_USERNAME}:${HARBOR_PASSWORD}" \
-              --request POST "${artifact}/scan")
-            if [[ "${scan_status}" != 202 && "${scan_status}" != 200 ]]; then
-              echo "Harbor scan request failed for ${repository}:${IMAGE_TAG} (HTTP ${scan_status})." >&2
-              exit 1
-            fi
+          complete=false
 
-            complete=false
-            for attempt in $(seq 1 60); do
-              overview=$(curl --silent --show-error --fail \
-                --user "${HARBOR_USERNAME}:${HARBOR_PASSWORD}" \
-                --header 'X-Accept-Vulnerabilities: application/vnd.security.vulnerability.report; version=1.1' \
-                "${artifact}?with_scan_overview=true" || true)
-              scan_state=$(printf '%s' "${overview}" | jq -r \
-                '[.scan_overview // {} | to_entries[] | select(.key | contains("vulnerability")) | .value.scan_status][0] // empty')
-              if [[ "${scan_state,,}" == "success" ]]; then
-                complete=true
-                break
-              fi
-              if [[ "${scan_state,,}" == "error" || "${scan_state,,}" == "stopped" ]]; then
-                echo "Harbor scan for ${repository}:${IMAGE_TAG} ended with status ${scan_state}." >&2
-                exit 1
-              fi
-              echo "${repository}:${IMAGE_TAG}: scan status '${scan_state:-pending}' (${attempt}/60)"
+          for attempt in $(seq 1 60); do
+            if ! curl --silent --show-error --fail \
+              --user "${HARBOR_USERNAME}:${HARBOR_PASSWORD}" \
+              "${artifact}?with_scan_overview=true" \
+              --output "${RUNNER_TEMP}/overview.json"; then
+              echo "Unable to query scan status (attempt ${attempt}/60)." >&2
               sleep 10
-            done
-            if [[ "${complete}" != true ]]; then
-              echo "Timed out waiting for Harbor scan of ${repository}:${IMAGE_TAG}." >&2
-              exit 1
+              continue
             fi
 
-            report="${report_root}/${repository}.json"
-            curl --silent --show-error --fail \
-              --user "${HARBOR_USERNAME}:${HARBOR_PASSWORD}" \
-              --header 'Accept: application/json' \
-              --header 'X-Accept-Vulnerabilities: application/vnd.security.vulnerability.report; version=1.1' \
-              "${artifact}/additions/vulnerabilities" > "${report}"
-            python3 scripts/harbor-report.py \
-              --repository "${repository}" --tag "${IMAGE_TAG}" \
-              --input "${report}" --output-dir "${report_root}"
-          done < .github/harbor-image-repositories.txt
+            scan_state=$(jq -r '
+              [.scan_overview // {} | to_entries[]
+               | select(.key | ascii_downcase | contains("vulnerability"))
+               | .value.scan_status][0] // ""
+            ' "${RUNNER_TEMP}/overview.json")
+
+            completion_time=$(jq -r '
+              [.scan_overview // {} | to_entries[]
+               | select(.key | ascii_downcase | contains("vulnerability"))
+               | (.value.end_time // .value.complete_time // empty)][0] // ""
+            ' "${RUNNER_TEMP}/overview.json")
+
+            case "${scan_state,,}" in
+              error|stopped)
+                echo "Harbor scan failed: ${scan_state}" >&2
+                exit 1
+                ;;
+              success)
+                if [[ -z "${PREVIOUS_TIME}" ||
+                      "${completion_time}" != "${PREVIOUS_TIME}" && -n "${completion_time}" ]]; then
+                  complete=true
+                  break
+                fi
+                ;;
+            esac
+
+            echo "${REPOSITORY}: status=${scan_state:-pending} (${attempt}/60)"
+            sleep 10
+          done
+
+          if [[ "${complete}" != true ]]; then
+            echo "Timed out waiting for a fresh Harbor scan of ${REPOSITORY}@${DIGEST}." >&2
+            echo "Check the scanner status and completion timestamp returned by your Harbor version." >&2
+            exit 1
+          fi
+
+          report="${report_root}/${ARTIFACT_NAME}.json"
+
+          curl --silent --show-error --fail \
+            --retry 3 --retry-delay 2 \
+            --user "${HARBOR_USERNAME}:${HARBOR_PASSWORD}" \
+            --header 'Accept: application/json' \
+            --header 'X-Accept-Vulnerabilities: application/vnd.security.vulnerability.report; version=1.1' \
+            "${artifact}/additions/vulnerabilities" \
+            --output "${report}"
+
+          jq -e 'type == "object"' "${report}" >/dev/null
+
+          python3 scripts/harbor-report.py \
+            --repository "${REPOSITORY}" \
+            --tag "${IMAGE_TAG}" \
+            --input "${report}" \
+            --output-dir "${report_root}"
+
+          echo "Report generated for ${REPOSITORY}@${DIGEST}"
 
       - name: Upload per-container reports
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: harbor-trivy-${{ inputs.image_tag }}
+          name: harbor-security-${{ matrix.artifact_name }}-${{ inputs.image_tag }}-${{ github.run_id }}
           path: ${{ runner.temp }}/harbor-security-reports/
-          if-no-files-found: error
+          if-no-files-found: warn
           retention-days: 30
