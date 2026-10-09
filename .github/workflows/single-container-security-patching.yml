@@ -90,10 +90,11 @@ jobs:
               )
               target = repository.rsplit("/", 1)[-1].lower()
               services = json.loads(rendered.stdout).get("services", {})
-              matches = [name for name, service in services.items()
-                         if str(service.get("image", "")).rsplit("/", 1)[-1].split(":", 1)[0].lower() == target]
-              if not matches and target in services:
+              if target in services:
                   matches = [target]
+              else:
+                  matches = [name for name, service in services.items()
+                             if str(service.get("image", "")).rsplit("/", 1)[-1].split(":", 1)[0].lower() == target]
               if len(matches) != 1:
                   raise SystemExit(
                       f"Could not uniquely map Harbor repository {repository!r} to a Compose service; "
