@@ -6,6 +6,7 @@ ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
 COMPOSE_FILE="$ROOT/simplified.compose.yml"
 MODE="${1:-stop}"
 TIMEOUT_SECONDS="${KILLSWITCH_TIMEOUT_SECONDS:-60}"
+PROJECT_NAME="${COMPOSE_PROJECT_NAME:-}"
 
 log() {
   printf '%s %s\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "$*"
@@ -65,6 +66,28 @@ compose() {
   fi
 }
 
+load_project_name() {
+  [ -n "$PROJECT_NAME" ] && return 0
+  if [ -f .env ]; then
+    PROJECT_NAME="$(sed -n 's/^COMPOSE_PROJECT_NAME[[:space:]]*=[[:space:]]*//p' .env | tail -n 1)"
+    PROJECT_NAME="${PROJECT_NAME#\"}"; PROJECT_NAME="${PROJECT_NAME%\"}"
+    PROJECT_NAME="${PROJECT_NAME#\'}"; PROJECT_NAME="${PROJECT_NAME%\'}"
+  fi
+  PROJECT_NAME="${PROJECT_NAME:-home-security-uk}"
+}
+
+remove_stale_containers() {
+  command -v podman >/dev/null 2>&1 || return 0
+  for label in com.docker.compose.project io.podman.compose.project; do
+    ids="$(podman ps -aq --filter "label=$label=$PROJECT_NAME")"
+    [ -n "$ids" ] || continue
+    log "Removing all containers with $label=$PROJECT_NAME"
+    # shellcheck disable=SC2086
+    podman rm --force $ids
+  done
+}
+
+load_project_name
 log "Mode=$MODE compose=$COMPOSE file=$COMPOSE_FILE profile=mvp"
 
 case "$MODE" in
@@ -76,7 +99,9 @@ case "$MODE" in
     log "MVP containers stopped; containers, network, volumes, and images were preserved"
     ;;
   down)
-    compose --profile mvp down --remove-orphans --timeout "$TIMEOUT_SECONDS"
-    log "MVP containers and network removed; volumes and images were preserved"
+    compose --profile mvp down --remove-orphans --timeout "$TIMEOUT_SECONDS" || \
+      log "Compose down reported an error; continuing with label-based container cleanup"
+    remove_stale_containers
+    log "MVP containers removed; network, volumes, and images were preserved"
     ;;
 esac
