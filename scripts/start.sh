@@ -64,6 +64,9 @@ done
 
 HARBOR_CACHE_HOST="${HARBOR_CACHE_HOST:-$(env_value HARBOR_CACHE_HOST)}"
 HARBOR_CACHE_HOST="${HARBOR_CACHE_HOST:-$REGISTRY}"
+HARBOR_CACHE_PROJECT_DOCKERIO="${HARBOR_CACHE_PROJECT_DOCKERIO:-$(env_value HARBOR_CACHE_PROJECT_DOCKERIO)}"
+HARBOR_CACHE_PROJECT_DOCKERHUB="${HARBOR_CACHE_PROJECT_DOCKERHUB:-$(env_value HARBOR_CACHE_PROJECT_DOCKERHUB)}"
+HARBOR_CACHE_PROJECT_DEFAULT="${HARBOR_CACHE_PROJECT_DEFAULT:-$(env_value HARBOR_CACHE_PROJECT_DEFAULT)}"
 HARBOR_CACHE_USERNAME="${HARBOR_CACHE_USERNAME:-$(env_value HARBOR_CACHE_USERNAME)}"
 HARBOR_CACHE_PASSWORD="${HARBOR_CACHE_PASSWORD:-$(env_value HARBOR_CACHE_PASSWORD)}"
 ROBOT_HARBOR_USERNAME="${ROBOT_HARBOR_USERNAME:-$(env_value ROBOT_HARBOR_USERNAME)}"
@@ -115,6 +118,21 @@ label_harbor_artifact() {
   esac
 }
 
+harbor_cache_reference() {
+  image="$1"
+  cache_project="${HARBOR_CACHE_PROJECT_DOCKERIO:-${HARBOR_CACHE_PROJECT_DOCKERHUB:-$HARBOR_CACHE_PROJECT_DEFAULT}}"
+  [ -n "$cache_project" ] || return 1
+  case "$image" in
+    docker.io/*)
+      image_path=${image#docker.io/}
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+  printf '%s/%s/%s' "$HARBOR_CACHE_HOST" "$cache_project" "$image_path"
+}
+
 log "Pruning local container images before pulling current images"
 podman image prune --all --force
 
@@ -136,7 +154,23 @@ while IFS=' ' read -r repo source; do
   esac
   target="$REGISTRY/$PROJECT/$repo:latest"
   log "Pulling current image $source"
-  podman pull "$source"
+  cache_source=
+  if cache_source=$(harbor_cache_reference "$source" 2>/dev/null); then
+    :
+  else
+    cache_source=
+  fi
+  if [ -n "$cache_source" ] && [ "$cache_source" != "$source" ]; then
+    log "Trying Harbor cache image $cache_source"
+    if podman pull "$cache_source"; then
+      source="$cache_source"
+    else
+      log "WARNING: Harbor cache pull failed; falling back to origin image $source"
+      podman pull "$source"
+    fi
+  else
+    podman pull "$source"
+  fi
   podman tag "$source" "$target"
   podman push "$target"
   label_harbor_artifact "$repo" latest
