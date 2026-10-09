@@ -1,0 +1,262 @@
+# Minimal Podman Compose stack for the home security MVP.
+# Start with: podman-compose -f simplified.compose.yml --profile mvp up -d
+
+name: ${COMPOSE_PROJECT_NAME:-home-security-uk}
+
+services:
+  coredns:
+    image: demo.goharbor.io/home-security-uk-registry/secdns:latest
+    container_name: secdns
+    profiles: ["mvp"]
+    command: ["-conf", "/etc/coredns/Corefile"]
+    ports:
+      - "${SECDNS_HOST_IP:-127.0.0.1}:${SECDNS_PORT:-1053}:53/udp"
+      - "${SECDNS_HOST_IP:-127.0.0.1}:${SECDNS_PORT:-1053}:53/tcp"
+    volumes:
+      - "./The Hands/CoreDNS/Corefile:/etc/coredns/Corefile:ro"
+      - "./The Hands/CoreDNS/hosts.hq-sec:/etc/coredns/hosts.hq-sec:ro"
+    networks:
+      secnet:
+        ipv4_address: "${SECDNS_IPV4:-10.77.0.53}"
+    restart: unless-stopped
+
+  caddy:
+    image: demo.goharbor.io/home-security-uk-registry/caddy:latest
+    container_name: caddy
+    profiles: ["mvp"]
+    volumes:
+      - "./The Hands/reports/dashboard-ui:/usr/share/caddy:ro"
+      - "./The Hands/reports/data:/usr/share/caddy/reports:ro"
+    networks: [secnet]
+    restart: unless-stopped
+
+  wazuh-indexer:
+    image: demo.goharbor.io/home-security-uk-registry/wazuh-indexer:latest
+    container_name: wazuh-indexer
+    profiles: ["mvp"]
+    environment:
+      OPENSEARCH_JAVA_OPTS: "${WAZUH_INDEXER_JAVA_OPTS:--Xms1g -Xmx1g}"
+      bootstrap.memory_lock: "true"
+      discovery.type: single-node
+      network.host: 0.0.0.0
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+    ports:
+      - "${STACK_BIND_IP:-127.0.0.1}:${WAZUH_INDEXER_PORT:-9200}:9200"
+    volumes:
+      - wazuh-indexer-data:/var/lib/wazuh-indexer
+    networks: [secnet]
+    healthcheck:
+      test: ["CMD-SHELL", "curl -kfsS https://localhost:9200 >/dev/null || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 20
+      start_period: 90s
+
+  wazuh-manager:
+    image: demo.goharbor.io/home-security-uk-registry/wazuh-manager:latest
+    container_name: wazuh-manager
+    hostname: wazuh-manager
+    profiles: ["mvp"]
+    environment:
+      INDEXER_URL: https://wazuh-indexer:9200
+      FILEBEAT_SSL_VERIFICATION_MODE: "${WAZUH_FILEBEAT_SSL_VERIFICATION_MODE:-none}"
+    ports:
+      - "${STACK_BIND_IP:-127.0.0.1}:${WAZUH_EVENTS_PORT:-1514}:1514/udp"
+      - "${STACK_BIND_IP:-127.0.0.1}:${WAZUH_FALLBACK_SYSLOG_PORT:-1516}:1516/udp"
+      - "${STACK_BIND_IP:-127.0.0.1}:${WAZUH_ENROLLMENT_PORT:-1515}:1515"
+      - "${STACK_BIND_IP:-127.0.0.1}:${WAZUH_API_PORT:-55000}:55000"
+    volumes:
+      - wazuh-manager-data:/var/ossec/data
+      - wazuh-manager-logs:/var/ossec/logs
+      - wazuh-manager-queue:/var/ossec/queue
+      - "./The Brain/Wazuh/rules/local_rules.xml:/var/ossec/etc/rules/local_rules.xml:ro"
+      - "./The Brain/Wazuh/decoders/local_decoder.xml:/var/ossec/etc/decoders/local_decoder.xml:ro"
+    networks: [secnet]
+    depends_on:
+      wazuh-indexer:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -kfsS https://localhost:55000 >/dev/null || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 20
+      start_period: 90s
+
+  wazuh-dashboard:
+    image: demo.goharbor.io/home-security-uk-registry/wazuh-dashboard:latest
+    container_name: wazuh-dashboard
+    profiles: ["mvp"]
+    environment:
+      INDEXER_URL: https://wazuh-indexer:9200
+      WAZUH_API_URL: https://wazuh-manager
+      DASHBOARD_USERNAME: "${WAZUH_DASHBOARD_USERNAME:-admin}"
+      DASHBOARD_PASSWORD: "${WAZUH_DASHBOARD_PASSWORD:-SecretPassword}"
+    ports:
+      - "${STACK_BIND_IP:-127.0.0.1}:${WAZUH_DASHBOARD_PORT:-5601}:5601"
+    networks: [secnet]
+    depends_on:
+      wazuh-indexer:
+        condition: service_healthy
+      wazuh-manager:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -kfsS https://localhost:5601/status >/dev/null || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 20
+      start_period: 90s
+
+  mongodb:
+    image: demo.goharbor.io/home-security-uk-registry/graylog-mongo:latest
+    container_name: graylog-mongo
+    profiles: ["mvp"]
+    volumes:
+      - graylog-mongo-data:/data/db
+    networks: [secnet]
+    healthcheck:
+      test: ["CMD-SHELL", "mongosh --quiet --eval 'db.adminCommand({ ping: 1 }).ok' localhost:27017/test | grep 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 30s
+
+  graylog-datanode:
+    image: demo.goharbor.io/home-security-uk-registry/graylog-datanode:latest
+    container_name: graylog-datanode
+    hostname: graylog-datanode
+    profiles: ["mvp"]
+    environment:
+      GRAYLOG_DATANODE_NODE_ID_FILE: /var/lib/graylog-datanode/node-id
+      GRAYLOG_DATANODE_PASSWORD_SECRET: "${GRAYLOG_PASSWORD_SECRET:-CHANGE_ME_CHANGE_ME_CHANGE_ME_CHANGE_ME_CHANGE_ME_CHANGE_ME}"
+      GRAYLOG_DATANODE_ROOT_PASSWORD_SHA2: "${GRAYLOG_ROOT_PASSWORD_SHA2:-8c6976e5b5410415bde908bd4dee15dfb167a9c873fc4bb8a81f6f2ab448a918}"
+      GRAYLOG_DATANODE_MONGODB_URI: mongodb://mongodb:27017/graylog
+      GRAYLOG_DATANODE_OPENSEARCH_HTTP_PORT: "9200"
+      GRAYLOG_DATANODE_OPENSEARCH_TRANSPORT_PORT: "9300"
+      OPENSEARCH_JAVA_OPTS: "${GRAYLOG_DATANODE_JAVA_OPTS:--Xms1g -Xmx1g}"
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+    volumes:
+      - graylog-datanode-data:/var/lib/graylog-datanode
+    networks: [secnet]
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:9200 >/dev/null || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 20
+      start_period: 90s
+
+  graylog:
+    image: demo.goharbor.io/home-security-uk-registry/graylog:latest
+    container_name: graylog
+    hostname: graylog
+    profiles: ["mvp"]
+    environment:
+      GRAYLOG_NODE_ID_FILE: /usr/share/graylog/data/config/node-id
+      GRAYLOG_PASSWORD_SECRET: "${GRAYLOG_PASSWORD_SECRET:-CHANGE_ME_CHANGE_ME_CHANGE_ME_CHANGE_ME_CHANGE_ME_CHANGE_ME}"
+      GRAYLOG_ROOT_PASSWORD_SHA2: "${GRAYLOG_ROOT_PASSWORD_SHA2:-8c6976e5b5410415bde908bd4dee15dfb167a9c873fc4bb8a81f6f2ab448a918}"
+      GRAYLOG_HTTP_BIND_ADDRESS: 0.0.0.0:9000
+      GRAYLOG_HTTP_EXTERNAL_URI: "${GRAYLOG_HTTP_EXTERNAL_URI:-http://localhost:9000/}"
+      GRAYLOG_MONGODB_URI: mongodb://mongodb:27017/graylog
+      GRAYLOG_ELASTICSEARCH_HOSTS: http://graylog-datanode:9200
+    entrypoint: ["/usr/bin/tini", "--", "/docker-entrypoint.sh"]
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      graylog-datanode:
+        condition: service_healthy
+    ports:
+      - "${STACK_BIND_IP:-127.0.0.1}:${GRAYLOG_HTTP_PORT:-9000}:9000"
+      - "${STACK_BIND_IP:-127.0.0.1}:${GRAYLOG_GELF_UDP_PORT:-12201}:12201/udp"
+      - "${STACK_BIND_IP:-127.0.0.1}:12202:12202/udp"
+      - "${STACK_BIND_IP:-127.0.0.1}:12203:12203/udp"
+      - "${STACK_BIND_IP:-127.0.0.1}:${GRAYLOG_SYSLOG_TCP_PORT:-5514}:1514/tcp"
+      - "${STACK_BIND_IP:-127.0.0.1}:${GRAYLOG_SYSLOG_UDP_PORT:-5514}:1514/udp"
+    volumes:
+      - graylog-data:/usr/share/graylog/data
+    networks: [secnet]
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:9000/api/system/lbstatus >/dev/null || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 20
+      start_period: 120s
+
+  fluent-bit:
+    image: demo.goharbor.io/home-security-uk-registry/log-forwarder:latest
+    container_name: fluent-bit
+    profiles: ["mvp"]
+    volumes:
+      - "./The Eyes/Fluent Bit/fluent-bit.conf:/fluent-bit/etc/fluent-bit.conf:ro"
+      - "./The Eyes/Fluent Bit/parsers.conf:/fluent-bit/etc/parsers.conf:ro"
+      - fluent-bit-state:/fluent-bit/state
+      - wazuh-manager-logs:/logs/wazuh-manager:ro
+    networks: [secnet]
+    restart: unless-stopped
+    depends_on:
+      graylog:
+        condition: service_healthy
+
+  uptime-kuma:
+    image: demo.goharbor.io/home-security-uk-registry/uptime-kuma:latest
+    container_name: uptime-kuma
+    profiles: ["mvp"]
+    volumes:
+      - uptime-kuma-data:/app/data
+    networks: [secnet]
+    ports:
+      - "${STACK_BIND_IP:-127.0.0.1}:${UPTIME_KUMA_PORT:-3002}:3001"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "node extra/healthcheck.js"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
+  uptime-kuma-sync:
+    image: demo.goharbor.io/home-security-uk-registry/uptime-kuma-sync:latest
+    container_name: uptime-kuma-sync
+    profiles: ["mvp"]
+    environment:
+      PYTHONUNBUFFERED: "1"
+      UPTIME_KUMA_URL: "${UPTIME_KUMA_URL:-http://uptime-kuma:3001}"
+      UPTIME_KUMA_USERNAME: "${UPTIME_KUMA_USERNAME:-admin}"
+      UPTIME_KUMA_PASSWORD: "${UPTIME_KUMA_PASSWORD:-}"
+      UPTIME_KUMA_SYNC_INTERVAL_SECONDS: "${UPTIME_KUMA_SYNC_INTERVAL_SECONDS:-21600}"
+      UPTIME_KUMA_SYNC_RUN_ON_STARTUP: "true"
+    volumes:
+      - "./The Eyes/Uptime-Kuma/monitors-mvp.yml:/uptime-kuma/monitors.yml:ro"
+      - "./The Eyes/Uptime-Kuma/scripts:/uptime-kuma/scripts:ro"
+    entrypoint: ["python", "/uptime-kuma/scripts/sync-monitors.py"]
+    networks: [secnet]
+    restart: unless-stopped
+    depends_on:
+      uptime-kuma:
+        condition: service_healthy
+
+networks:
+  secnet:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: "${SECNET_CIDR:-10.77.0.0/24}"
+          gateway: "${SECNET_GATEWAY:-10.77.0.1}"
+
+volumes:
+  fluent-bit-state:
+  uptime-kuma-data:
+  wazuh-indexer-data:
+  wazuh-manager-data:
+  wazuh-manager-logs:
+  wazuh-manager-queue:
+  graylog-mongo-data:
+  graylog-datanode-data:
+  graylog-data:
