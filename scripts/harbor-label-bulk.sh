@@ -2,6 +2,10 @@
 set +x
 set -euo pipefail
 
+export ROBOT_USER="robot_home-security-uk-registry+home-sec-bot"
+export ROBOT_SECRET="r6zrOIEeufjXZY6EZNB9Tyy84sGetCqL"
+export HARBOR="https://demo.goharbor.io"
+
 : "${ROBOT_USER:?Set ROBOT_USER first}"
 : "${ROBOT_SECRET:?Set ROBOT_SECRET first}"
 : "${HARBOR:?Set HARBOR first}"
