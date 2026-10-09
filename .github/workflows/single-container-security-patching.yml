@@ -64,45 +64,11 @@ jobs:
               part in ("", ".", "..") for part in repository.split("/")
           ):
               raise SystemExit("image_ref contains an invalid repository path.")
-          # Resolve the service from the rendered Compose image names. A
-          # repository-specific override can be set in .env or .env.example.
-          import json
-          import subprocess
-
-          def env_value(key):
-              for env_file in (Path(".env"), Path(".env.example")):
-                  if not env_file.is_file():
-                      continue
-                  for line in env_file.read_text().splitlines():
-                      line = line.strip()
-                      if line and not line.startswith("#") and "=" in line:
-                          name, value = line.split("=", 1)
-                          if name.strip() == key:
-                              return value.strip().strip("\"'")
-              return ""
-
-          compose_service = env_value("HARBOR_COMPOSE_SERVICE")
-          if not compose_service or compose_service == "auto":
-              rendered = subprocess.run(
-                  ["docker", "compose", "--env-file", ".env.example", "-f",
-                   "security-stack.compose.yml", "config", "--format", "json"],
-                  check=True, capture_output=True, text=True,
-              )
-              target = repository.rsplit("/", 1)[-1].lower()
-              services = json.loads(rendered.stdout).get("services", {})
-              if target in services:
-                  matches = [target]
-              else:
-                  matches = [name for name, service in services.items()
-                             if str(service.get("image", "")).rsplit("/", 1)[-1].split(":", 1)[0].lower() == target]
-              if len(matches) != 1:
-                  raise SystemExit(
-                      f"Could not uniquely map Harbor repository {repository!r} to a Compose service; "
-                      "set HARBOR_COMPOSE_SERVICE in .env.example."
-                  )
-              compose_service = matches[0]
-          if not re.fullmatch(r"[a-z0-9][a-z0-9_-]*", compose_service):
-              raise SystemExit("compose_service must be a lowercase Compose service name.")
+          # The Caddy Harbor repository and Compose service share a name.
+          target = repository.rsplit("/", 1)[-1].lower()
+          if not re.fullmatch(r"[a-z0-9][a-z0-9_-]*", target):
+              raise SystemExit("Harbor repository must end with a Compose service name.")
+          compose_service = target
 
           script = Path("scripts/test-image-reference.sh")
           if not script.is_file():
@@ -114,8 +80,6 @@ jobs:
           print(f"image_tag={reference.rsplit(':', 1)[1]}")
           print(f"compose_service={compose_service}")
           print(f"test_script={script.as_posix()}")
-          with Path(os.environ["GITHUB_ENV"]).open("a", encoding="utf-8") as runner_env:
-              runner_env.write(f"HARBOR_COMPOSE_SERVICE={compose_service}\n")
           PY
 
       - name: Prepare Harbor repository input

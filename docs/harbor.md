@@ -53,7 +53,7 @@ Replace `SOURCE_IMAGE`, `REPOSITORY`, and `TAG` with the local image reference a
 ```sh
 IMAGE_ID=$(podman image inspect --format '{{.Id}}' docker.io/library/caddy:2.8.4-alpine)
 podman push "$IMAGE_ID" \
-  demo.goharbor.io/home-security-uk-registry/report-dashboard:v1.1
+  demo.goharbor.io/home-security-uk-registry/caddy:v1.1
 ```
 
 Docker can push by tagging the local image first:

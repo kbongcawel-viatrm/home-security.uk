@@ -2,6 +2,7 @@
 
 | Commit Message | Branch | Hash | Date |
 | --- | --- | --- | --- |
+| Align Caddy Compose and Harbor naming | security-hardening | — | 2026-10-09 |
 | Add staged Harbor vulnerability remediation and verification gate | security-hardening | — | 2026-10-09 |
 | Increase security scan parallelism and clarify Harbor scan permissions | security-hardening | — | 2026-10-09 |
 | Add Harbor image security scanning workflow | security-hardening | — | 2026-10-09 |

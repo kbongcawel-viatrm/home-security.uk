@@ -1,6 +1,6 @@
 secdns
 fqdn-proxy
-report-dashboard
+caddy
 ghost
 ghost-model-pull
 uptime-kuma

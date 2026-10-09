@@ -11,7 +11,7 @@ Act as the SOC observing analyst. Use Graylog as the search source of truth and 
 
 ## Service Contract
 
-- Containers: `graylog-bootstrap`, `log-forwarder`, `report-dashboard`
+- Containers: `graylog-bootstrap`, `log-forwarder`, `caddy`
 - Profiles: `logs`, `dashboard`, `ops`, `all`
 - Dashboard: `http://reports.hq-sec.local`
 - Assessment output: produced by `ghost-assessor` under `./The Hands/reports/data/log-assessments/latest/assessment.json` and `.md`
