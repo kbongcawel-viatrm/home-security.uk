@@ -158,6 +158,12 @@ harbor_cache_reference() {
 log "Pruning local container images before pulling current images"
 podman image prune --all --force
 
+COREDNS_VERSION="${COREDNS_VERSION:-$(env_value COREDNS_VERSION)}"
+COREDNS_VERSION="${COREDNS_VERSION:-1.11.3}"
+CADDY_VERSION="${CADDY_VERSION:-$(env_value CADDY_VERSION)}"
+CADDY_VERSION="${CADDY_VERSION:-2.8.4-alpine}"
+MONGO_VERSION="${MONGO_VERSION:-$(env_value MONGO_VERSION)}"
+MONGO_VERSION="${MONGO_VERSION:-7.0.29}"
 WAZUH_VERSION="${WAZUH_VERSION:-$(env_value WAZUH_VERSION)}"
 WAZUH_VERSION="${WAZUH_VERSION:-4.14.4}"
 GRAYLOG_VERSION="${GRAYLOG_VERSION:-$(env_value GRAYLOG_VERSION)}"
@@ -174,7 +180,13 @@ while IFS=' ' read -r repo source; do
       source="docker.io/graylog/$repo:$GRAYLOG_VERSION"
       ;;
   esac
-  target="$REGISTRY/$PROJECT/$repo:latest"
+  target_tag=latest
+  case "$repo" in
+    secdns|caddy|graylog-mongo)
+      target_tag=v1.1
+      ;;
+  esac
+  target="$REGISTRY/$PROJECT/$repo:$target_tag"
   log "Pulling current image $source"
   cache_source=
   if cache_source=$(harbor_cache_reference "$source" 2>/dev/null); then
@@ -195,14 +207,14 @@ while IFS=' ' read -r repo source; do
   fi
   podman tag "$source" "$target"
   podman push "$target"
-  label_harbor_artifact "$repo" latest
+  label_harbor_artifact "$repo" "$target_tag"
 done <<'IMAGES'
-secdns docker.io/coredns/coredns:latest
-caddy docker.io/library/caddy:latest
+secdns docker.io/coredns/coredns:${COREDNS_VERSION}
+caddy docker.io/library/caddy:${CADDY_VERSION}
 wazuh-indexer versioned
 wazuh-manager versioned
 wazuh-dashboard versioned
-graylog-mongo docker.io/library/mongo:latest
+graylog-mongo docker.io/library/mongo:${MONGO_VERSION}
 graylog-datanode versioned
 graylog versioned
 log-forwarder docker.io/fluent/fluent-bit:latest
@@ -242,9 +254,9 @@ GRAYLOG_PORT="${GRAYLOG_PORT:-12201}"
 HTTP_PORT="${GRAYLOG_HTTP_PORT:-$(env_value GRAYLOG_HTTP_PORT)}"
 HTTP_PORT="${HTTP_PORT:-9000}"
 GRAYLOG_ROOT_USERNAME="${GRAYLOG_ROOT_USERNAME:-$(env_value GRAYLOG_ROOT_USERNAME)}"
-GRAYLOG_ROOT_USERNAME="${GRAYLOG_ROOT_USERNAME:-admin}"
 GRAYLOG_ROOT_PASSWORD="${GRAYLOG_ROOT_PASSWORD:-$(env_value GRAYLOG_ROOT_PASSWORD)}"
-GRAYLOG_ROOT_PASSWORD="${GRAYLOG_ROOT_PASSWORD:-admin}"
+[ -n "$GRAYLOG_ROOT_USERNAME" ] || fail "GRAYLOG_ROOT_USERNAME is missing from .env or the environment"
+[ -n "$GRAYLOG_ROOT_PASSWORD" ] || fail "GRAYLOG_ROOT_PASSWORD is missing from .env or the environment"
 log "Creating Graylog GELF and syslog inputs"
 GRAYLOG_API_URL="http://127.0.0.1:${HTTP_PORT}/api" \
   GRAYLOG_ROOT_USERNAME="$GRAYLOG_ROOT_USERNAME" \
@@ -268,6 +280,7 @@ log "Checking Uptime Kuma"
 UPTIME_KUMA_PORT="${UPTIME_KUMA_PORT:-3002}"
 curl -fsS "http://127.0.0.1:$UPTIME_KUMA_PORT/" >/dev/null || fail "Uptime Kuma did not respond"
 UPTIME_KUMA_PASSWORD="${UPTIME_KUMA_PASSWORD:-$(env_value UPTIME_KUMA_PASSWORD)}"
+[ -n "${UPTIME_KUMA_USERNAME:-$(env_value UPTIME_KUMA_USERNAME)}" ] || fail "UPTIME_KUMA_USERNAME is missing from .env or the environment"
 if [ -z "$UPTIME_KUMA_PASSWORD" ]; then
   fail "Uptime Kuma is running, but no account password is configured. Finish first-time setup, set UPTIME_KUMA_USERNAME and UPTIME_KUMA_PASSWORD in .env, then rerun scripts/start.sh to provision MVP monitors."
 fi

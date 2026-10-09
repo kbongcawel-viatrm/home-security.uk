@@ -5,7 +5,7 @@ name: ${COMPOSE_PROJECT_NAME:-home-security-uk}
 
 services:
   coredns:
-    image: demo.goharbor.io/home-security-uk-registry/secdns:latest
+    image: demo.goharbor.io/home-security-uk-registry/secdns:v1.1
     container_name: secdns
     profiles: ["mvp"]
     command: ["-conf", "/etc/coredns/Corefile"]
@@ -13,24 +13,24 @@ services:
       - "${SECDNS_HOST_IP:-127.0.0.1}:${SECDNS_PORT:-1053}:53/udp"
       - "${SECDNS_HOST_IP:-127.0.0.1}:${SECDNS_PORT:-1053}:53/tcp"
     volumes:
-      - "./The Hands/CoreDNS/Corefile:/etc/coredns/Corefile:ro"
-      - "./The Hands/CoreDNS/hosts.hq-sec:/etc/coredns/hosts.hq-sec:ro"
+      - "./The Hands/CoreDNS/Corefile:/etc/coredns/Corefile:ro,z"
+      - "./The Hands/CoreDNS/hosts.hq-sec:/etc/coredns/hosts.hq-sec:ro,z"
     networks:
       secnet:
         ipv4_address: "${SECDNS_IPV4:-10.77.0.53}"
     restart: unless-stopped
 
   caddy:
-    image: demo.goharbor.io/home-security-uk-registry/caddy:latest
+    image: demo.goharbor.io/home-security-uk-registry/caddy:v1.1
     container_name: caddy
     profiles: ["mvp"]
     ports:
       - "${FQDN_HTTP_HOST_IP:-127.0.0.1}:${FQDN_HTTP_PORT:-8081}:80"
       - "${FQDN_HTTPS_HOST_IP:-127.0.0.1}:${FQDN_HTTPS_PORT:-8443}:443"
     volumes:
-      - "./The Hands/FQDN proxy - Caddy/Caddyfile:/etc/caddy/Caddyfile:ro"
-      - "./The Hands/reports/dashboard-ui:/usr/share/caddy:ro"
-      - "./The Hands/reports/data:/usr/share/caddy/reports:ro"
+      - "./The Hands/FQDN proxy - Caddy/Caddyfile:/etc/caddy/Caddyfile:ro,z"
+      - "./The Hands/reports/dashboard-ui:/usr/share/caddy:ro,z"
+      - "./The Hands/reports/data:/usr/share/caddy/reports:ro,z"
       - caddy-logs:/var/log/caddy
     networks:
       secnet:
@@ -58,7 +58,11 @@ services:
       - wazuh-indexer-data:/var/lib/wazuh-indexer
     networks: [secnet]
     healthcheck:
-      test: ["CMD-SHELL", "curl -kfsS https://localhost:9200 >/dev/null || exit 1"]
+      # The indexer's security plugin returns 401 until credentials are supplied;
+      # that is still a healthy TLS listener.  Check transport availability without
+      # treating the authentication response (or its self-signed certificate) as a
+      # failure.
+      test: ["CMD-SHELL", "curl -ksS -o /dev/null https://localhost:9200 || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 20
@@ -101,8 +105,8 @@ services:
     environment:
       INDEXER_URL: https://wazuh-indexer:9200
       WAZUH_API_URL: https://wazuh-manager
-      DASHBOARD_USERNAME: "${WAZUH_DASHBOARD_USERNAME:-admin}"
-      DASHBOARD_PASSWORD: "${WAZUH_DASHBOARD_PASSWORD:-SecretPassword}"
+      DASHBOARD_USERNAME: "${WAZUH_DASHBOARD_USERNAME}"
+      DASHBOARD_PASSWORD: "${WAZUH_DASHBOARD_PASSWORD}"
     ports:
       - "${STACK_BIND_IP:-127.0.0.1}:${WAZUH_DASHBOARD_PORT:-5601}:5601"
     networks: [secnet]
@@ -119,7 +123,9 @@ services:
       start_period: 90s
 
   mongodb:
-    image: demo.goharbor.io/home-security-uk-registry/graylog-mongo:latest
+    # Keep MongoDB on the vetted stack release; the floating image can select a
+    # newer MongoDB build whose kernel requirements exceed older lab hosts.
+    image: demo.goharbor.io/home-security-uk-registry/graylog-mongo:v1.1
     container_name: graylog-mongo
     profiles: ["mvp"]
     volumes:
@@ -139,8 +145,8 @@ services:
     profiles: ["mvp"]
     environment:
       GRAYLOG_DATANODE_NODE_ID_FILE: /var/lib/graylog-datanode/node-id
-      GRAYLOG_DATANODE_PASSWORD_SECRET: "${GRAYLOG_PASSWORD_SECRET:-CHANGE_ME_CHANGE_ME_CHANGE_ME_CHANGE_ME_CHANGE_ME_CHANGE_ME}"
-      GRAYLOG_DATANODE_ROOT_PASSWORD_SHA2: "${GRAYLOG_ROOT_PASSWORD_SHA2:-8c6976e5b5410415bde908bd4dee15dfb167a9c873fc4bb8a81f6f2ab448a918}"
+      GRAYLOG_DATANODE_PASSWORD_SECRET: "${GRAYLOG_PASSWORD_SECRET}"
+      GRAYLOG_DATANODE_ROOT_PASSWORD_SHA2: "${GRAYLOG_ROOT_PASSWORD_SHA2}"
       GRAYLOG_DATANODE_MONGODB_URI: mongodb://mongodb:27017/graylog
       GRAYLOG_DATANODE_OPENSEARCH_HTTP_PORT: "9200"
       GRAYLOG_DATANODE_OPENSEARCH_TRANSPORT_PORT: "9300"
@@ -169,8 +175,8 @@ services:
     profiles: ["mvp"]
     environment:
       GRAYLOG_NODE_ID_FILE: /usr/share/graylog/data/config/node-id
-      GRAYLOG_PASSWORD_SECRET: "${GRAYLOG_PASSWORD_SECRET:-CHANGE_ME_CHANGE_ME_CHANGE_ME_CHANGE_ME_CHANGE_ME_CHANGE_ME}"
-      GRAYLOG_ROOT_PASSWORD_SHA2: "${GRAYLOG_ROOT_PASSWORD_SHA2:-8c6976e5b5410415bde908bd4dee15dfb167a9c873fc4bb8a81f6f2ab448a918}"
+      GRAYLOG_PASSWORD_SECRET: "${GRAYLOG_PASSWORD_SECRET}"
+      GRAYLOG_ROOT_PASSWORD_SHA2: "${GRAYLOG_ROOT_PASSWORD_SHA2}"
       GRAYLOG_HTTP_BIND_ADDRESS: 0.0.0.0:9000
       GRAYLOG_HTTP_EXTERNAL_URI: "${GRAYLOG_HTTP_EXTERNAL_URI:-http://localhost:9000/}"
       GRAYLOG_MONGODB_URI: mongodb://mongodb:27017/graylog
@@ -220,8 +226,6 @@ services:
     volumes:
       - uptime-kuma-data:/app/data
     networks: [secnet]
-    dns:
-      - "${SECDNS_IPV4:-10.77.0.53}"
     ports:
       - "${STACK_BIND_IP:-127.0.0.1}:${UPTIME_KUMA_PORT:-3002}:3001"
     restart: unless-stopped
@@ -239,8 +243,8 @@ services:
     environment:
       PYTHONUNBUFFERED: "1"
       UPTIME_KUMA_URL: "${UPTIME_KUMA_URL:-http://uptime-kuma:3001}"
-      UPTIME_KUMA_USERNAME: "${UPTIME_KUMA_USERNAME:-admin}"
-      UPTIME_KUMA_PASSWORD: "${UPTIME_KUMA_PASSWORD:-}"
+      UPTIME_KUMA_USERNAME: "${UPTIME_KUMA_USERNAME}"
+      UPTIME_KUMA_PASSWORD: "${UPTIME_KUMA_PASSWORD}"
       UPTIME_KUMA_SYNC_INTERVAL_SECONDS: "${UPTIME_KUMA_SYNC_INTERVAL_SECONDS:-21600}"
       UPTIME_KUMA_SYNC_RUN_ON_STARTUP: "true"
     volumes:
@@ -248,8 +252,6 @@ services:
       - "./The Eyes/Uptime-Kuma/scripts:/uptime-kuma/scripts:ro"
     entrypoint: ["python", "/uptime-kuma/scripts/sync-monitors.py"]
     networks: [secnet]
-    dns:
-      - "${SECDNS_IPV4:-10.77.0.53}"
     restart: unless-stopped
     depends_on:
       uptime-kuma:
