@@ -14,6 +14,17 @@ IMAGE_TAG = re.compile(r"^(v)?([0-9]+)\.([0-9]+)$")
 USER_TOKEN = re.compile(r"^[A-Za-z0-9_.:-]+$")
 
 
+def latest_image_ref(image):
+    """Return the same registry/repository with a mutable latest tag."""
+    image = str(image).strip()
+    if not image or "@" in image:
+        raise ValueError(f"Cannot derive a latest tag from Compose image {image!r}.")
+    last_component = image.rsplit("/", 1)[-1]
+    if ":" in last_component:
+        return image.rsplit(":", 1)[0] + ":latest"
+    return image + ":latest"
+
+
 def run(command, *, capture=False):
     display = " ".join(str(part) for part in command)
     print("+ " + display, flush=True)
@@ -36,7 +47,10 @@ def next_tag(source_tag):
     return f"{prefix or ''}{major}.{int(minor) + 1}"
 
 
-def make_plan(report_path, repositories_path, source_tag, compose_service=None):
+def make_plan(
+    report_path, repositories_path, source_tag, compose_service=None,
+    refresh_base_image=False,
+):
     allowed_repositories = {
         line.strip()
         for line in repositories_path.read_text(encoding="utf-8").splitlines()
@@ -55,6 +69,10 @@ def make_plan(report_path, repositories_path, source_tag, compose_service=None):
         fixed_in = str(finding.get("fixed_in", "")).strip()
         if repository not in allowed_repositories:
             raise ValueError(f"Finding references unlisted Harbor repository {repository!r}.")
+        # A latest-base refresh is verified by the workflow's post-build scan.
+        if refresh_base_image:
+            grouped.setdefault(repository, {})
+            continue
         if not package or not fixed_in:
             unresolved.append(
                 f"{repository} {finding.get('cve', '')}: missing package or Fixed In version"
@@ -86,6 +104,7 @@ def make_plan(report_path, repositories_path, source_tag, compose_service=None):
         {
             "repository": repository,
             "service": compose_service or repository,
+            "base_image": None,
             "packages": [
                 {"name": package, "version": version}
                 for package, version in sorted(packages.items())
@@ -96,6 +115,11 @@ def make_plan(report_path, repositories_path, source_tag, compose_service=None):
 
 
 def dockerfile_for(base_image, packages, original_user):
+    if not packages:
+        lines = [f"FROM {base_image}"]
+        if original_user:
+            lines.append(f"USER {original_user}")
+        return "\n".join(lines) + "\n"
     apt_args = " ".join(f"{item['name']}={item['version']}" for item in packages)
     rpm_args = " ".join(f"{item['name']}-{item['version']}" for item in packages)
     install = (
@@ -120,9 +144,6 @@ def dockerfile_for(base_image, packages, original_user):
 
 
 def dockerfile_build(args):
-    candidates = make_plan(
-        args.report, args.repositories_file, args.source_tag, args.compose_service
-    )
     candidate_tag = f"candidate-{args.run_id}"
     args.bundle_dir.mkdir(parents=True, exist_ok=True)
     compose_result = run(
@@ -133,6 +154,10 @@ def dockerfile_build(args):
         capture=True,
     )
     compose_services = json.loads(compose_result.stdout).get("services", {})
+    candidates = make_plan(
+        args.report, args.repositories_file, args.source_tag, args.compose_service,
+        refresh_base_image=args.latest_base_image,
+    )
     override = {"services": {}}
     service_names = []
     candidate_images = []
@@ -147,8 +172,16 @@ def dockerfile_build(args):
             )
         source_image = f"{args.registry}/{args.project}/{repository}:{args.source_tag}"
         candidate_image = f"{args.registry}/{args.project}/{repository}:{candidate_tag}"
-        run(["docker", "pull", source_image])
-        inspected = run(["docker", "image", "inspect", source_image], capture=True)
+        base_image = item["base_image"] or source_image
+        if args.latest_base_image:
+            configured_image = compose_services[service].get("image")
+            if not configured_image:
+                raise ValueError(
+                    f"Compose service {service!r} has no image to refresh to latest."
+                )
+            base_image = latest_image_ref(configured_image)
+        run(["docker", "pull", base_image])
+        inspected = run(["docker", "image", "inspect", base_image], capture=True)
         config = json.loads(inspected.stdout)[0].get("Config") or {}
         original_user = str(config.get("User") or "")
         if original_user and not USER_TOKEN.fullmatch(original_user):
@@ -157,7 +190,7 @@ def dockerfile_build(args):
         context = args.bundle_dir / "contexts" / repository.replace("/", "_")
         context.mkdir(parents=True, exist_ok=True)
         (context / "Dockerfile").write_text(
-            dockerfile_for(source_image, item["packages"], original_user),
+            dockerfile_for(base_image, item["packages"], original_user),
             encoding="utf-8",
         )
         override["services"][service] = {
@@ -169,6 +202,7 @@ def dockerfile_build(args):
         manifest_repositories.append({
             **item,
             "source_image": source_image,
+            "base_image": base_image,
             "candidate_image": candidate_image,
         })
 
@@ -327,6 +361,10 @@ def main():
     build.add_argument("--registry", required=True)
     build.add_argument("--source-tag", required=True)
     build.add_argument("--compose-service")
+    build.add_argument(
+        "--latest-base-image", action="store_true",
+        help="Rebuild from the latest tag of the Compose service's configured image.",
+    )
     build.add_argument("--run-id", required=True)
     build.add_argument("--bundle-dir", required=True, type=Path)
     build.set_defaults(func=dockerfile_build)
