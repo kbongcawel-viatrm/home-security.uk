@@ -47,13 +47,13 @@ monitors:
     url: http://reports.hq-sec.local
     category: Support Services
     fqdn: reports.hq-sec.local
-    endpoint: http://report-dashboard:80
+    endpoint: http://caddy:80
 
   - name: Reports Dashboard Container
     type: http
-    url: http://container-health-exporter:8080/container/report-dashboard
+    url: http://container-health-exporter:8080/container/caddy
     category: Support Services
-    endpoint: container:report-dashboard
+    endpoint: container:caddy
 
   - name: Uptime Kuma
     type: http

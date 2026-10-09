@@ -86,7 +86,7 @@ vault.hq-sec.local {
 
 reports.hq-sec.local {
     tls internal
-    reverse_proxy http://report-dashboard:80
+    reverse_proxy http://caddy:80
 }
 
 uptime.hq-sec.local {
