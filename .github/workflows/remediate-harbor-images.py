@@ -16,11 +16,7 @@ USER_TOKEN = re.compile(r"^[A-Za-z0-9_.:-]+$")
 
 
 def latest_image_ref(image):
-    """Return the same registry/repository with a latest tag when available.
-
-    Harbor images are not guaranteed to have a :latest tag, so we prefer it when it
-    exists and otherwise fall back to the original image reference.
-    """
+    """Return the Compose image with a latest tag, requiring it to exist."""
     image = str(image).strip()
     if not image or "@" in image:
         raise ValueError(f"Cannot derive a latest tag from Compose image {image!r}.")
@@ -28,20 +24,7 @@ def latest_image_ref(image):
     base = image.rsplit(":", 1)[0] if ":" in image.rsplit("/", 1)[-1] else image
     latest_ref = base + ":latest"
 
-    # Prefer :latest only if it exists; otherwise, use the original tag.
-    try:
-        result = subprocess.run(
-            ["docker", "manifest", "inspect", latest_ref],
-            capture_output=True,
-            text=True,
-            timeout=10,
-        )
-        if result.returncode == 0:
-            return latest_ref
-    except (FileNotFoundError, subprocess.TimeoutExpired):
-        pass
-
-    return image
+    return latest_ref
 
 
 def run(command, *, capture=False):
@@ -268,6 +251,23 @@ def dockerfile_build(args):
                 )
             base_image = latest_image_ref(configured_image)
         run(engine_command(args) + ["pull", base_image])
+
+        # In latest-refresh mode, use the pulled image as the candidate directly.
+        # Building FROM it adds no package changes and can fail for application
+        # images that do not have a package manager or a usable build context.
+        if args.latest_base_image:
+            run(engine_command(args) + ["tag", base_image, candidate_image])
+            override["services"][service] = {"image": candidate_image}
+            manifest_repositories.append({
+                **item,
+                "source_image": source_image,
+                "base_image": base_image,
+                "candidate_image": candidate_image,
+            })
+            candidate_images.append(candidate_image)
+            service_names.append(service)
+            continue
+
         inspected = run(engine_command(args) + ["image", "inspect", base_image], capture=True)
         config = json.loads(inspected.stdout)[0].get("Config") or {}
         original_user = str(config.get("User") or "")
@@ -305,7 +305,7 @@ def dockerfile_build(args):
     manifest_path = args.bundle_dir / "candidate-manifest.json"
     manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
 
-    if service_names:
+    if service_names and not args.latest_base_image:
         profiles = service_profiles(args.compose_file, service_names)
         compose = compose_prefix(
             args, profiles=profiles, files=[args.compose_file, override_path]
@@ -314,8 +314,11 @@ def dockerfile_build(args):
         print(f"Building candidate images through {compose_backend(args)}.")
         run(compose + ["build", "--pull"] + service_names)
         run(engine_command(args) + ["save", "--output", args.bundle_dir / "candidate-images.tar"] + candidate_images)
-    else:
+    elif not service_names:
         print("No High/Critical findings; no candidate images need rebuilding.")
+    else:
+        print("Using the pulled latest image directly; no Dockerfile build is required.")
+        run(engine_command(args) + ["save", "--output", args.bundle_dir / "candidate-images.tar"] + candidate_images)
 
 
 def make_compose_override(manifest):

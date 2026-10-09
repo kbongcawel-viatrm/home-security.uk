@@ -214,13 +214,13 @@ jobs:
           name: harbor-image-review-${{ github.run_id }}
           path: ${{ runner.temp }}/review
 
-      - name: Require an actionable fixed High or Critical finding
+      - name: Require a High or Critical finding for the latest-image refresh
         shell: bash
         run: |
           set -euo pipefail
           count=$(jq '.findings | length' "${RUNNER_TEMP}/review/approved-remediation-input.json")
           if [[ "${count}" -eq 0 ]]; then
-            echo "No High/Critical package fixes were available; refusing to build or publish an unchanged image." >&2
+            echo "No High/Critical findings were available; refusing to refresh or publish an image." >&2
             exit 1
           fi
 
@@ -231,7 +231,7 @@ jobs:
           printf '%s' "${HARBOR_PASSWORD}" | docker login "${HARBOR_HOST}" \
             --username "${HARBOR_USERNAME}" --password-stdin
 
-      - name: Build the proposed package updates through Compose
+      - name: Pull the latest configured image and stage it as a candidate
         env:
           REPOSITORY: ${{ needs.initial-scan.outputs.repository }}
           IMAGE_TAG: ${{ needs.initial-scan.outputs.image_tag }}
