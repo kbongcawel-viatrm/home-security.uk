@@ -21,7 +21,7 @@ fi
 
 if [ -n "${HARBOR_USERNAME:-}" ] && [ -n "${HARBOR_PASSWORD:-}" ]; then
   printf '%s' "$HARBOR_PASSWORD" | podman login demo.goharbor.io \
-    --username "$HARBOR_USERNAME" --password-stdin
+    --username "$HARBOR_USERNAME" --password "$HARBOR_PASSWORD"
 else
   printf 'Set HARBOR_USERNAME and HARBOR_PASSWORD before running this script.\n' >&2
   exit 1
