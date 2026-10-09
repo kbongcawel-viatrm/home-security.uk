@@ -5,6 +5,7 @@ import argparse
 import json
 from pathlib import Path
 import re
+import shutil
 import subprocess
 import sys
 
@@ -35,6 +36,81 @@ def run(command, *, capture=False):
         stdout=subprocess.PIPE if capture else None,
         stderr=subprocess.PIPE if capture else None,
     )
+
+
+def compose_backend(args):
+    """Prefer podman-compose, while retaining an explicit Docker fallback."""
+    backend = args.compose_backend
+    if backend == "auto":
+        backend = "podman-compose" if shutil.which("podman-compose") else "docker"
+    if backend == "podman-compose" and not shutil.which("podman-compose"):
+        raise ValueError("podman-compose was selected but is not installed.")
+    if backend == "docker" and not shutil.which("docker"):
+        raise ValueError("Docker Compose was selected but docker is not installed.")
+    return backend
+
+
+def engine_command(args):
+    return ["podman"] if compose_backend(args) == "podman-compose" else ["docker"]
+
+
+def compose_prefix(args, *, profiles=(), files=()):
+    backend = compose_backend(args)
+    command = ["podman-compose"] if backend == "podman-compose" else ["docker", "compose"]
+    if backend == "docker":
+        command += ["--profile", "*"]
+    else:
+        for profile in profiles:
+            command += ["--profile", profile]
+    if getattr(args, "compose_env_file", None):
+        command += ["--env-file", args.compose_env_file]
+    for compose_file in files:
+        command += ["-f", compose_file]
+    return command
+
+
+def compose_model(args, files):
+    """Render the Compose model, enabling each profile for podman-compose."""
+    if compose_backend(args) == "docker":
+        rendered = run(
+            compose_prefix(args, files=files) + ["config", "--format", "json"],
+            capture=True,
+        )
+        return json.loads(rendered.stdout)
+
+    try:
+        import yaml
+    except ImportError as error:
+        raise ValueError("PyYAML is required when using podman-compose.") from error
+
+    source = yaml.safe_load(Path(files[0]).read_text(encoding="utf-8")) or {}
+    profiles = sorted({
+        profile
+        for service in source.get("services", {}).values()
+        for profile in service.get("profiles", [])
+    })
+    services = {}
+    for profile in profiles or [None]:
+        selected = (profile,) if profile else ()
+        rendered = run(
+            compose_prefix(args, profiles=selected, files=files) + ["config"],
+            capture=True,
+        )
+        model = yaml.safe_load(rendered.stdout) or {}
+        services.update(model.get("services", {}))
+    return {"services": services}
+
+
+def service_profiles(compose_file, service_names):
+    try:
+        import yaml
+    except ImportError:
+        return []
+    model = yaml.safe_load(Path(compose_file).read_text(encoding="utf-8")) or {}
+    profiles = set()
+    for name in service_names:
+        profiles.update((model.get("services", {}).get(name) or {}).get("profiles", []))
+    return sorted(profiles)
 
 
 def next_tag(source_tag):
@@ -146,14 +222,7 @@ def dockerfile_for(base_image, packages, original_user):
 def dockerfile_build(args):
     candidate_tag = f"candidate-{args.run_id}"
     args.bundle_dir.mkdir(parents=True, exist_ok=True)
-    compose_result = run(
-        [
-            "docker", "compose", "--env-file", args.compose_env_file,
-            "-f", args.compose_file, "config", "--format", "json",
-        ],
-        capture=True,
-    )
-    compose_services = json.loads(compose_result.stdout).get("services", {})
+    compose_services = compose_model(args, [args.compose_file]).get("services", {})
     candidates = make_plan(
         args.report, args.repositories_file, args.source_tag, args.compose_service,
         refresh_base_image=args.latest_base_image,
@@ -180,8 +249,8 @@ def dockerfile_build(args):
                     f"Compose service {service!r} has no image to refresh to latest."
                 )
             base_image = latest_image_ref(configured_image)
-        run(["docker", "pull", base_image])
-        inspected = run(["docker", "image", "inspect", base_image], capture=True)
+        run(engine_command(args) + ["pull", base_image])
+        inspected = run(engine_command(args) + ["image", "inspect", base_image], capture=True)
         config = json.loads(inspected.stdout)[0].get("Config") or {}
         original_user = str(config.get("User") or "")
         if original_user and not USER_TOKEN.fullmatch(original_user):
@@ -219,14 +288,14 @@ def dockerfile_build(args):
     manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
 
     if service_names:
-        compose = [
-            "docker", "compose", "--env-file", args.compose_env_file,
-            "-f", args.compose_file, "-f", override_path,
-        ]
+        profiles = service_profiles(args.compose_file, service_names)
+        compose = compose_prefix(
+            args, profiles=profiles, files=[args.compose_file, override_path]
+        )
         run(compose + ["config", "--quiet"])
-        print("Building candidate images through Docker Compose.")
+        print(f"Building candidate images through {compose_backend(args)}.")
         run(compose + ["build", "--pull"] + service_names)
-        run(["docker", "save", "--output", args.bundle_dir / "candidate-images.tar"] + candidate_images)
+        run(engine_command(args) + ["save", "--output", args.bundle_dir / "candidate-images.tar"] + candidate_images)
     else:
         print("No High/Critical findings; no candidate images need rebuilding.")
 
@@ -251,15 +320,12 @@ def validate_candidate(args):
         print("No candidate images; validation stage has nothing to run.")
         return
 
-    run(["docker", "load", "--input", args.bundle_dir / "candidate-images.tar"])
+    run(engine_command(args) + ["load", "--input", args.bundle_dir / "candidate-images.tar"])
     override_path = args.bundle_dir / "compose-validation-override.yml"
     override_path.write_text(json.dumps(make_compose_override(manifest), indent=2) + "\n", encoding="utf-8")
-    compose = [
-        "docker", "compose", "--env-file", args.compose_env_file,
-        "-f", args.compose_file, "-f", override_path,
-    ]
-    rendered = run(compose + ["config", "--format", "json"], capture=True)
-    configured_services = json.loads(rendered.stdout).get("services", {})
+    configured_services = compose_model(
+        args, [args.compose_file, override_path]
+    ).get("services", {})
 
     check_script = r'''set -eu
 if command -v dpkg-query >/dev/null 2>&1; then
@@ -287,7 +353,7 @@ fi
     for item in manifest["repositories"]:
         test_compose["services"][item["service"]] = {"image": item["candidate_image"]}
     test_compose_path.write_text(json.dumps(test_compose, indent=2) + "\n", encoding="utf-8")
-    test_prefix = ["docker", "compose", "-f", test_compose_path]
+    test_prefix = compose_prefix(args, files=[test_compose_path])
     run(test_prefix + ["config", "--quiet"])
 
     for item in manifest["repositories"]:
@@ -297,7 +363,7 @@ fi
             raise ValueError(
                 f"Compose maps {item['service']} to {configured_image!r}, expected {image!r}."
             )
-        run(["docker", "image", "inspect", image], capture=True)
+        run(engine_command(args) + ["image", "inspect", image], capture=True)
         for package in item["packages"]:
             run([
                 *test_prefix, "run", "--rm", "--no-deps",
@@ -324,13 +390,13 @@ def publish_candidate(args):
     target_tag = next_tag(manifest["source_tag"]) if manifest["repositories"] else ""
     published_images = []
     if manifest["repositories"]:
-        run(["docker", "load", "--input", args.bundle_dir / "candidate-images.tar"])
+        run(engine_command(args) + ["load", "--input", args.bundle_dir / "candidate-images.tar"])
         for item in manifest["repositories"]:
             target_image = (
                 f"{args.registry}/{args.project}/{item['repository']}:{target_tag}"
             )
-            run(["docker", "tag", item["candidate_image"], target_image])
-            run(["docker", "push", target_image])
+            run(engine_command(args) + ["tag", item["candidate_image"], target_image])
+            run(engine_command(args) + ["push", target_image])
             published_images.append(target_image)
 
     published_manifest = {
@@ -353,6 +419,11 @@ def main():
     subparsers = parser.add_subparsers(dest="phase", required=True)
 
     build = subparsers.add_parser("build")
+    build.add_argument(
+        "--compose-backend", choices=("auto", "podman-compose", "docker"),
+        default="auto",
+        help="Compose implementation (auto prefers podman-compose, then Docker Compose).",
+    )
     build.add_argument("--report", required=True, type=Path)
     build.add_argument("--repositories-file", required=True, type=Path)
     build.add_argument("--compose-file", required=True, type=Path)
@@ -370,12 +441,22 @@ def main():
     build.set_defaults(func=dockerfile_build)
 
     validate = subparsers.add_parser("validate")
+    validate.add_argument(
+        "--compose-backend", choices=("auto", "podman-compose", "docker"),
+        default="auto",
+        help="Compose implementation (auto prefers podman-compose, then Docker Compose).",
+    )
     validate.add_argument("--compose-file", required=True, type=Path)
     validate.add_argument("--compose-env-file", required=True, type=Path)
     validate.add_argument("--bundle-dir", required=True, type=Path)
     validate.set_defaults(func=validate_candidate)
 
     publish = subparsers.add_parser("publish")
+    publish.add_argument(
+        "--compose-backend", choices=("auto", "podman-compose", "docker"),
+        default="auto",
+        help="Container backend (auto prefers Podman when podman-compose is installed).",
+    )
     publish.add_argument("--project", required=True)
     publish.add_argument("--registry", required=True)
     publish.add_argument("--bundle-dir", required=True, type=Path)
