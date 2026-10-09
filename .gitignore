@@ -1,4 +1,5 @@
 todo.md
+*.sw*
 .env
 .env.vault
 The Hands/backups/
