@@ -114,6 +114,8 @@ jobs:
           print(f"image_tag={reference.rsplit(':', 1)[1]}")
           print(f"compose_service={compose_service}")
           print(f"test_script={script.as_posix()}")
+          with Path(os.environ["GITHUB_ENV"]).open("a", encoding="utf-8") as runner_env:
+              runner_env.write(f"HARBOR_COMPOSE_SERVICE={compose_service}\n")
           PY
 
       - name: Prepare Harbor repository input
@@ -269,7 +271,7 @@ jobs:
         env:
           REPOSITORY: ${{ needs.initial-scan.outputs.repository }}
           IMAGE_TAG: ${{ needs.initial-scan.outputs.image_tag }}
-          COMPOSE_SERVICE: ${{ needs.initial-scan.outputs.compose_service }}
+          HARBOR_COMPOSE_SERVICE: ${{ needs.initial-scan.outputs.compose_service }}
         shell: bash
         run: |
           set -euo pipefail
@@ -282,7 +284,7 @@ jobs:
             --project "${HARBOR_PROJECT}" \
             --registry "${HARBOR_HOST}" \
             --source-tag "${IMAGE_TAG}" \
-            --compose-service "${COMPOSE_SERVICE}" \
+            --compose-service "${HARBOR_COMPOSE_SERVICE}" \
             --run-id "${GITHUB_RUN_ID}" \
             --bundle-dir "${RUNNER_TEMP}/candidate"
 
