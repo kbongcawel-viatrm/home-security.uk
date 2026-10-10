@@ -53,6 +53,42 @@ profile_args() {
   done
 }
 
+pull_missing_images() {
+  require_command python3
+
+  missing_services="$(compose $(profile_args) config --format json | python3 -c '
+import json
+import subprocess
+import sys
+
+config = json.load(sys.stdin)
+engine = sys.argv[1]
+for service, definition in config.get("services", {}).items():
+    image = definition.get("image")
+    if not image:
+        continue
+    result = subprocess.run(
+        [engine, "image", "inspect", image],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        check=False,
+    )
+    if result.returncode == 0:
+        print(f"{service}: image already present locally ({image})", file=sys.stderr)
+    else:
+        print(service)
+' "${CONTAINER_ENGINE}")"
+
+  if [ -n "${missing_services}" ]; then
+    log "pulling images missing locally"
+    # Service names in Compose output are whitespace-free.
+    # shellcheck disable=SC2086
+    compose $(profile_args) pull ${missing_services}
+  else
+    log "all selected images are already present locally; skipping remote pulls"
+  fi
+}
+
 require_command() {
   if ! command -v "$1" >/dev/null 2>&1; then
     echo "Missing required command: $1" >&2
@@ -173,8 +209,7 @@ main() {
   compose $(profile_args) config >/dev/null
 
   if [ "${PULL_IMAGES}" = "true" ]; then
-    log "pulling images"
-    compose $(profile_args) pull
+    pull_missing_images
   fi
 
   log "starting services"
