@@ -2,17 +2,19 @@
 #
 # Windows-focused security monitoring and incident-response lab stack.
 #
-# Usage:
+# Usage (prefer podman-compose; use docker compose only if podman-compose is absent):
 #   cp .env.example .env
-#   docker compose -f security-stack.compose.yml --profile brain config
-#   docker compose -f security-stack.compose.yml --profile brain up -d
-#   docker compose -f security-stack.compose.yml --profile network up -d
-#   docker compose -f security-stack.compose.yml --profile ir up -d
-#   docker compose -f security-stack.compose.yml --profile vuln up -d
-#   docker compose -f security-stack.compose.yml --profile all up -d
+#   podman-compose -f security-stack.compose.yml --profile brain config
+#   podman-compose -f security-stack.compose.yml --profile brain up -d
+#   podman-compose -f security-stack.compose.yml --profile network up -d
+#   podman-compose -f security-stack.compose.yml --profile ir up -d
+#   podman-compose -f security-stack.compose.yml --profile vuln up -d
+#   podman-compose -f security-stack.compose.yml --profile all up -d
 #
-# Linux host requirements:
-#   sudo sysctl -w vm.max_map_count=262144
+# On Secureblue, use run0 for host administration. OpenSearch-based services
+# may require vm.max_map_count=262144. Configure this persistently using a
+# Secureblue/ostree-safe sysctl method, then verify before deployment.
+# Start brain, ir, and vuln separately before using profile all.
 #
 # This is a lab stack. Production Wazuh, Graylog, TheHive, Shuffle, and
 # Greenbone deployments should use each vendor's full hardening guidance,
@@ -20,11 +22,11 @@
 
 name: ${COMPOSE_PROJECT_NAME:-home-security-uk}
 
-x-graylog-logging: &graylog-logging
-  driver: gelf
-  options:
-    gelf-address: "udp://${GRAYLOG_GELF_ADDRESS:-127.0.0.1}:${GRAYLOG_GELF_UDP_PORT:-12201}"
-    tag: "{{.Name}}"
+# Container stdout/stderr uses the runtime default logging driver. A daemon GELF
+# driver targeting 127.0.0.1 is not portable: loopback is interpreted in the
+# runtime/daemon network namespace and rootless Podman may not reach Graylog there.
+# Forward application/file logs with log-forwarder after configuring its Fluent Bit
+# output and a matching GELF input in Graylog.
 
 services:
   ############################################################
@@ -51,7 +53,6 @@ services:
       interval: 30s
       timeout: 5s
       retries: 5
-    logging: *graylog-logging
 
   caddy:
     image: demo.goharbor.io/home-security-uk-registry/caddy:v1.1
@@ -68,7 +69,6 @@ services:
       interval: 30s
       timeout: 5s
       retries: 5
-    logging: *graylog-logging
 
   ############################################################
   # The Ghost - LLM Governance (governs above all pillars)
@@ -91,7 +91,6 @@ services:
       timeout: 10s
       retries: 10
       start_period: 30s
-    logging: *graylog-logging
 
   ghost-model-pull:
     image: demo.goharbor.io/home-security-uk-registry/ghost-model-pull:v1.1
@@ -117,7 +116,6 @@ services:
     depends_on:
       ghost:
         condition: service_healthy
-    logging: *graylog-logging
 
   uptime-kuma:
     image: demo.goharbor.io/home-security-uk-registry/uptime-kuma:v1.1
@@ -136,7 +134,6 @@ services:
       timeout: 10s
       retries: 5
       start_period: 60s
-    logging: *graylog-logging
 
   uptime-kuma-sync:
     image: demo.goharbor.io/home-security-uk-registry/uptime-kuma-sync:v1.1
@@ -158,15 +155,15 @@ services:
     depends_on:
       uptime-kuma:
         condition: service_healthy
-    logging: *graylog-logging
 
+# Container API socket access is highly privileged; :ro does not make API calls read-only.
   container-health-exporter:
     image: demo.goharbor.io/home-security-uk-registry/container-health-exporter:v1.1
     container_name: container-health-exporter
     profiles: ["ops", "monitor", "all"]
     volumes:
       - "./The Eyes/Uptime-Kuma/scripts/container-health-exporter.py:/container-health-exporter.py:ro"
-      - "${CONTAINER_SOCKET_PATH:-/var/run/docker.sock}:/var/run/docker.sock:ro"
+      - "${CONTAINER_SOCKET_PATH:-/run/user/1000/podman/podman.sock}:/var/run/docker.sock:ro"
     entrypoint: ["python", "/container-health-exporter.py"]
     networks:
       - secnet
@@ -176,31 +173,30 @@ services:
       interval: 30s
       timeout: 5s
       retries: 5
-    logging: *graylog-logging
 
   ############################################################
   # Management Tools
   ############################################################
 
+# Portainer can administer the connected engine. Keep its UI loopback-bound and restrict socket access.
   portainer:
     image: demo.goharbor.io/home-security-uk-registry/portainer:v1.1
     container_name: portainer
     profiles: ["ops", "monitor", "all"]
     restart: unless-stopped
     volumes:
-      - "${CONTAINER_SOCKET_PATH:-/var/run/docker.sock}:/var/run/docker.sock:ro"
+      - "${CONTAINER_SOCKET_PATH:-/run/user/1000/podman/podman.sock}:/var/run/docker.sock:ro"
       - portainer-data:/data
     networks:
       - secnet
     ports:
       - "${STACK_BIND_IP:-127.0.0.1}:${PORTAINER_HTTP_PORT:-9002}:9000"
       - "${STACK_BIND_IP:-127.0.0.1}:${PORTAINER_HTTPS_PORT:-9443}:9443"
-    logging: *graylog-logging
 
   log-forwarder:
     image: demo.goharbor.io/home-security-uk-registry/log-forwarder:v1.1
     container_name: log-forwarder
-    profiles: ["ops", "logs", "all"]
+    profiles: ["ops", "logs", "brain", "all"]
     volumes:
       - "./The Eyes/Fluent Bit/fluent-bit.conf:/fluent-bit/etc/fluent-bit.conf:ro"
       - "./The Eyes/Fluent Bit/parsers.conf:/fluent-bit/etc/parsers.conf:ro"
@@ -216,12 +212,11 @@ services:
     depends_on:
       graylog:
         condition: service_healthy
-    logging: *graylog-logging
 
   graylog-bootstrap:
     image: demo.goharbor.io/home-security-uk-registry/graylog-bootstrap:v1.1
     container_name: graylog-bootstrap
-    profiles: ["ops", "logs", "all"]
+    profiles: ["ops", "logs", "brain", "all"]
     environment:
       GRAYLOG_API_URL: "${GRAYLOG_API_URL:-http://graylog:9000/api}"
       GRAYLOG_ROOT_USERNAME: "${GRAYLOG_ROOT_USERNAME:-admin}"
@@ -237,7 +232,6 @@ services:
     depends_on:
       graylog:
         condition: service_healthy
-    logging: *graylog-logging
 
   ghost-assessor:
     image: demo.goharbor.io/home-security-uk-registry/ghost-assessor:v1.1
@@ -287,7 +281,6 @@ services:
         condition: service_completed_successfully
       graylog:
         condition: service_healthy
-    logging: *graylog-logging
 
   ############################################################
   # Secrets Management
@@ -320,7 +313,6 @@ services:
       timeout: 10s
       retries: 10
       start_period: 30s
-    logging: *graylog-logging
 
   vault-rotator:
     image: demo.goharbor.io/home-security-uk-registry/vault-rotator:v1.1
@@ -343,7 +335,6 @@ services:
     restart: unless-stopped
     depends_on:
       - vault
-    logging: *graylog-logging
 
   ############################################################
   # Backup & Vulnerability Observation
@@ -396,7 +387,6 @@ services:
       - uptime-kuma-data:/sources/uptime-kuma-data:ro
     entrypoint: ["/bin/sh", "/backup/scripts/backup-volumes.sh"]
     restart: unless-stopped
-    logging: *graylog-logging
 
   container-vuln-scanner:
     image: demo.goharbor.io/home-security-uk-registry/container-vuln-scanner:v1.1
@@ -414,12 +404,12 @@ services:
       - trivy-cache:/root/.cache/trivy
     entrypoint: ["/bin/sh", "/scanner/scripts/scan-containers.sh"]
     restart: unless-stopped
-    logging: *graylog-logging
 
   ############################################################
   # Visualization & SIEM - "Brain"
   ############################################################
 
+# Resource-heavy module: deploy brain independently and confirm available RAM and disk.
   wazuh-indexer:
     image: demo.goharbor.io/home-security-uk-registry/wazuh-indexer:v1.1
     container_name: wazuh-indexer
@@ -445,7 +435,6 @@ services:
       timeout: 10s
       retries: 20
       start_period: 90s
-    logging: *graylog-logging
 
   wazuh-manager:
     image: demo.goharbor.io/home-security-uk-registry/wazuh-manager:v1.1
@@ -477,7 +466,6 @@ services:
       timeout: 10s
       retries: 20
       start_period: 90s
-    logging: *graylog-logging
 
   wazuh-dashboard:
     image: demo.goharbor.io/home-security-uk-registry/wazuh-dashboard:v1.1
@@ -503,8 +491,8 @@ services:
       timeout: 10s
       retries: 20
       start_period: 90s
-    logging: *graylog-logging
 
+# Graylog/Data Node are memory- and storage-intensive; validate brain separately.
   graylog-mongo:
     image: demo.goharbor.io/home-security-uk-registry/graylog-mongo:v1.1
     container_name: graylog-mongo
@@ -519,7 +507,6 @@ services:
       timeout: 10s
       retries: 10
       start_period: 30s
-    logging: *graylog-logging
 
   graylog-datanode:
     image: demo.goharbor.io/home-security-uk-registry/graylog-datanode:v1.1
@@ -551,7 +538,6 @@ services:
       timeout: 10s
       retries: 20
       start_period: 90s
-    logging: *graylog-logging
 
   graylog:
     image: demo.goharbor.io/home-security-uk-registry/graylog:v1.1
@@ -589,7 +575,6 @@ services:
       timeout: 10s
       retries: 20
       start_period: 120s
-    logging: *graylog-logging
 
   ############################################################
   # Network Monitoring - "Eyes"
@@ -608,7 +593,7 @@ services:
       - "-c"
       - "/etc/suricata/suricata.yaml"
       - "-i"
-      - "${SENSOR_INTERFACE:-eth0}"
+      - "${SENSOR_INTERFACE:-enp1s0}"
       - "--set"
       - "outputs.eve-log.enabled=yes"
       - "--user"
@@ -620,7 +605,6 @@ services:
       - "./The Sword/Suricata/suricata.yaml:/etc/suricata/suricata.yaml:ro"
       - "./The Sword/Suricata/rules:/var/lib/suricata/rules:ro"
     restart: unless-stopped
-    logging: *graylog-logging
 
   suricata-rules-update:
     image: demo.goharbor.io/home-security-uk-registry/suricata-rules-update:v1.1
@@ -638,7 +622,6 @@ services:
       - "./The Sword/Suricata/rules:/local-rules:ro"
       - "./The Sword/Suricata/rules:/var/lib/suricata/rules"
     restart: unless-stopped
-    logging: *graylog-logging
 
   zeek:
     image: demo.goharbor.io/home-security-uk-registry/zeek:v1.1
@@ -648,11 +631,10 @@ services:
     cap_add:
       - NET_ADMIN
       - NET_RAW
-    command: ["zeek", "-i", "${SENSOR_INTERFACE:-eth0}"]
+    command: ["zeek", "-i", "${SENSOR_INTERFACE:-enp1s0}"]
     volumes:
       - zeek-logs:/usr/local/zeek/logs
     restart: unless-stopped
-    logging: *graylog-logging
 
   ############################################################
   # Incident Response & Automation - "Shield"
@@ -679,7 +661,6 @@ services:
       timeout: 10s
       retries: 20
       start_period: 90s
-    logging: *graylog-logging
 
   shuffle-opensearch:
     image: demo.goharbor.io/home-security-uk-registry/shuffle-opensearch:v1.1
@@ -711,8 +692,8 @@ services:
       timeout: 10s
       retries: 20
       start_period: 90s
-    logging: *graylog-logging
 
+# Shuffle and Orborus require container API access to launch workers; this is highly privileged.
   shuffle-backend:
     image: demo.goharbor.io/home-security-uk-registry/shuffle-backend:v1.1
     container_name: shuffle-backend
@@ -726,7 +707,7 @@ services:
       SHUFFLE_OPENSEARCH_SKIPSSL_VERIFY: "true"
       SHUFFLE_APP_SECRET: "${SHUFFLE_APP_SECRET:-CHANGE_ME_SHUFFLE_LAB_SECRET}"
     volumes:
-      - "${CONTAINER_SOCKET_PATH:-/var/run/docker.sock}:/var/run/docker.sock"
+      - "${CONTAINER_SOCKET_PATH:-/run/user/1000/podman/podman.sock}:/var/run/docker.sock"
       - shuffle-apps:/shuffle-apps
       - shuffle-files:/shuffle-files
     networks:
@@ -741,7 +722,6 @@ services:
       timeout: 10s
       retries: 20
       start_period: 120s
-    logging: *graylog-logging
 
   shuffle-frontend:
     image: demo.goharbor.io/home-security-uk-registry/shuffle-frontend:v1.1
@@ -763,7 +743,6 @@ services:
       timeout: 10s
       retries: 20
       start_period: 120s
-    logging: *graylog-logging
 
   shuffle-orborus:
     image: demo.goharbor.io/home-security-uk-registry/shuffle-orborus:v1.1
@@ -785,7 +764,7 @@ services:
       CLEANUP: "false"
       SHUFFLE_WORKER_IMAGE: "ghcr.io/shuffle/shuffle-worker:${SHUFFLE_WORKER_VERSION:-nightly}"
     volumes:
-      - "${CONTAINER_SOCKET_PATH:-/var/run/docker.sock}:/var/run/docker.sock"
+      - "${CONTAINER_SOCKET_PATH:-/run/user/1000/podman/podman.sock}:/var/run/docker.sock"
     networks:
       - secnet
     restart: unless-stopped
@@ -794,7 +773,6 @@ services:
         condition: service_healthy
     security_opt:
       - seccomp:unconfined
-    logging: *graylog-logging
 
   velociraptor:
     image: demo.goharbor.io/home-security-uk-registry/velociraptor:v1.1
@@ -817,7 +795,6 @@ services:
       timeout: 10s
       retries: 20
       start_period: 90s
-    logging: *graylog-logging
 
   crowdsec:
     image: demo.goharbor.io/home-security-uk-registry/crowdsec:v1.1
@@ -839,7 +816,6 @@ services:
     networks:
       - secnet
     restart: unless-stopped
-    logging: *graylog-logging
 
   ansible-ir:
     image: demo.goharbor.io/home-security-uk-registry/ansible-ir:v1.1
@@ -856,7 +832,6 @@ services:
     entrypoint: ["sleep", "infinity"]
     networks:
       - secnet
-    logging: *graylog-logging
 
   ############################################################
   # Vulnerability & Hardening
@@ -874,8 +849,8 @@ services:
       - /:/host:ro
     networks:
       - secnet
-    logging: *graylog-logging
 
+# Greenbone feed/data services can use substantial disk and memory; deploy vuln separately.
   vulnerability-tests:
     image: demo.goharbor.io/home-security-uk-registry/vulnerability-tests:v1.1
     container_name: vulnerability-tests
@@ -887,7 +862,6 @@ services:
       - greenbone-vt-data:/mnt
     networks:
       - secnet
-    logging: *graylog-logging
 
   notus-data:
     image: demo.goharbor.io/home-security-uk-registry/notus-data:v1.1
@@ -899,7 +873,6 @@ services:
       - greenbone-notus-data:/mnt
     networks:
       - secnet
-    logging: *graylog-logging
 
   scap-data:
     image: demo.goharbor.io/home-security-uk-registry/scap-data:v1.1
@@ -911,7 +884,6 @@ services:
       - greenbone-scap-data:/mnt
     networks:
       - secnet
-    logging: *graylog-logging
 
   cert-bund-data:
     image: demo.goharbor.io/home-security-uk-registry/cert-bund-data:v1.1
@@ -923,7 +895,6 @@ services:
       - greenbone-cert-data:/mnt
     networks:
       - secnet
-    logging: *graylog-logging
 
   dfn-cert-data:
     image: demo.goharbor.io/home-security-uk-registry/dfn-cert-data:v1.1
@@ -938,7 +909,6 @@ services:
     depends_on:
       cert-bund-data:
         condition: service_healthy
-    logging: *graylog-logging
 
   data-objects:
     image: demo.goharbor.io/home-security-uk-registry/data-objects:v1.1
@@ -951,7 +921,6 @@ services:
       - greenbone-data-objects:/mnt
     networks:
       - secnet
-    logging: *graylog-logging
 
   report-formats:
     image: demo.goharbor.io/home-security-uk-registry/report-formats:v1.1
@@ -967,7 +936,6 @@ services:
     depends_on:
       data-objects:
         condition: service_healthy
-    logging: *graylog-logging
 
   gpg-data:
     image: demo.goharbor.io/home-security-uk-registry/gpg-data:v1.1
@@ -977,7 +945,6 @@ services:
       - greenbone-gpg-data:/mnt
     networks:
       - secnet
-    logging: *graylog-logging
 
   redis-server:
     image: demo.goharbor.io/home-security-uk-registry/redis-server:v1.1
@@ -988,7 +955,6 @@ services:
       - greenbone-redis-socket:/run/redis/
     networks:
       - secnet
-    logging: *graylog-logging
 
   pg-gvm-migrator:
     image: demo.goharbor.io/home-security-uk-registry/pg-gvm-migrator:v1.1
@@ -999,7 +965,6 @@ services:
       - greenbone-psql-socket:/var/run/postgresql
     networks:
       - secnet
-    logging: *graylog-logging
 
   pg-gvm:
     image: demo.goharbor.io/home-security-uk-registry/pg-gvm:v1.1
@@ -1014,7 +979,6 @@ services:
     depends_on:
       pg-gvm-migrator:
         condition: service_completed_successfully
-    logging: *graylog-logging
 
   gvmd:
     image: demo.goharbor.io/home-security-uk-registry/gvmd:v1.1
@@ -1049,7 +1013,6 @@ services:
         condition: service_healthy
       report-formats:
         condition: service_healthy
-    logging: *graylog-logging
 
   gsa:
     image: demo.goharbor.io/home-security-uk-registry/gsa:v1.1
@@ -1065,7 +1028,6 @@ services:
     healthcheck:
       test: ["CMD-SHELL", "test -e /run/gsa/copying.done"]
       start_period: 5s
-    logging: *graylog-logging
 
   gsad:
     image: demo.goharbor.io/home-security-uk-registry/gsad:v1.1
@@ -1083,7 +1045,6 @@ services:
     depends_on:
       gvmd:
         condition: service_started
-    logging: *graylog-logging
 
   gvm-config:
     image: demo.goharbor.io/home-security-uk-registry/gvm-config:v1.1
@@ -1097,7 +1058,6 @@ services:
       - greenbone-nginx-certificates:/mnt/nginx/certs
     networks:
       - secnet
-    logging: *graylog-logging
 
   greenbone-nginx:
     image: demo.goharbor.io/home-security-uk-registry/greenbone-nginx:v1.1
@@ -1120,7 +1080,6 @@ services:
         condition: service_healthy
       gsad:
         condition: service_started
-    logging: *graylog-logging
 
   configure-openvas:
     image: demo.goharbor.io/home-security-uk-registry/configure-openvas:v1.1
@@ -1141,7 +1100,6 @@ services:
         chmod 666 /var/log/openvas/openvas.log
     networks:
       - secnet
-    logging: *graylog-logging
 
   openvas:
     image: demo.goharbor.io/home-security-uk-registry/openvas:v1.1
@@ -1161,7 +1119,6 @@ services:
     depends_on:
       configure-openvas:
         condition: service_completed_successfully
-    logging: *graylog-logging
 
   openvasd:
     image: demo.goharbor.io/home-security-uk-registry/openvasd:v1.1
@@ -1190,7 +1147,6 @@ services:
         condition: service_completed_successfully
       gpg-data:
         condition: service_completed_successfully
-    logging: *graylog-logging
 
   ospd-openvas:
     image: demo.goharbor.io/home-security-uk-registry/ospd-openvas:v1.1
@@ -1236,7 +1192,6 @@ services:
         condition: service_healthy
       notus-data:
         condition: service_healthy
-    logging: *graylog-logging
 
   gvm-tools:
     image: demo.goharbor.io/home-security-uk-registry/gvm-tools:v1.1
@@ -1250,7 +1205,6 @@ services:
     depends_on:
       - gvmd
       - ospd-openvas
-    logging: *graylog-logging
 
   nmap-scanner:
     build:
@@ -1265,10 +1219,6 @@ services:
     networks:
       - secnet
     restart: unless-stopped
-    logging:
-      driver: gelf
-      options:
-        gelf-address: "udp://${GRAYLOG_GELF_ADDRESS:-127.0.0.1}:12202"
 
   wireshark-scanner:
     build:
@@ -1280,15 +1230,13 @@ services:
     container_name: wireshark-scanner
     profiles: ["network", "all"]
     network_mode: host
+    environment:
+      SENSOR_INTERFACE: "${SENSOR_INTERFACE:-enp1s0}"
     cap_add:
       - NET_ADMIN
       - NET_RAW
     restart: unless-stopped
     command: ["/usr/local/bin/capture.sh"]
-    logging:
-      driver: gelf
-      options:
-        gelf-address: "udp://${GRAYLOG_GELF_ADDRESS:-127.0.0.1}:12203"
 
 networks:
   secnet:
