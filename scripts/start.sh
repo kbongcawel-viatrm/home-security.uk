@@ -9,6 +9,7 @@ PROJECT=home-security-uk-registry
 HEALTH_TIMEOUT_SECONDS="${HEALTH_TIMEOUT_SECONDS:-900}"
 STUCK_TIMEOUT_SECONDS="${STUCK_TIMEOUT_SECONDS:-180}"
 POLL_INTERVAL_SECONDS="${POLL_INTERVAL_SECONDS:-10}"
+INDEXER_SECURITY_INIT_TIMEOUT_SECONDS="${INDEXER_SECURITY_INIT_TIMEOUT_SECONDS:-${HEALTH_TIMEOUT_SECONDS}}"
 VALIDATE_ONLY="${VALIDATE_ONLY:-false}"
 REFRESH_IMAGES="${REFRESH_IMAGES:-false}"
 PULL_IMAGES="${PULL_IMAGES:-true}"
@@ -20,6 +21,17 @@ fail() { printf 'ERROR: %s\n' "$*" >&2; exit 1; }
 diagnose_containers() {
   log "Container diagnostics:"
   podman ps -a --format 'table {{.Names}}\t{{.Status}}\t{{.Ports}}' >&2 || true
+  for container in secdns caddy wazuh-indexer graylog-mongo uptime-kuma wazuh-manager wazuh-dashboard graylog-datanode graylog fluent-bit uptime-kuma-sync; do
+    health="$(podman inspect --format '{{.State.Status}} {{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$container" 2>/dev/null || true)"
+    [ -n "$health" ] || continue
+    printf '  %s: %s\n' "$container" "$health" >&2
+    case "$health" in
+      *unhealthy*)
+        podman inspect --format '    health failing streak: {{.State.Health.FailingStreak}}' "$container" >&2 || true
+        podman inspect --format '{{range .State.Health.Log}}{{if .Output}}{{.Output}}{{end}}{{end}}' "$container" >&2 || true
+        ;;
+    esac
+  done
 }
 fail_with_diagnostics() {
   diagnose_containers
@@ -385,6 +397,61 @@ wait_for_containers() {
   done
 }
 
+indexer_security_status() {
+  podman exec wazuh-indexer sh -c '
+    curl -ksS -o /dev/null -w "%{http_code}" \
+      --cacert /usr/share/wazuh-indexer/config/certs/root-ca.pem \
+      --cert /usr/share/wazuh-indexer/config/certs/admin.pem \
+      --key /usr/share/wazuh-indexer/config/certs/admin-key.pem \
+      https://localhost:9200/.opendistro_security 2>/dev/null || true
+  ' 2>/dev/null || true
+}
+
+initialize_indexer_security() {
+  deadline=$(( $(date +%s) + INDEXER_SECURITY_INIT_TIMEOUT_SECONDS ))
+  log "Waiting for Wazuh indexer HTTPS endpoint before checking OpenSearch Security"
+  while :; do
+    indexer_http_status="$(podman exec wazuh-indexer sh -c '
+      curl -ksS -o /dev/null -w "%{http_code}" https://localhost:9200/ 2>/dev/null || true
+    ' 2>/dev/null || true)"
+    case "$indexer_http_status" in
+      2??|3??|401|503) break ;;
+    esac
+    [ "$(date +%s)" -lt "$deadline" ] || fail_with_diagnostics "Wazuh indexer HTTPS endpoint did not become available"
+    sleep "$POLL_INTERVAL_SECONDS"
+  done
+
+  indexer_security_http_status="$(indexer_security_status)"
+  case "$indexer_security_http_status" in
+    2??)
+      log "Wazuh indexer OpenSearch Security is already initialized"
+      return 0
+      ;;
+  esac
+
+  log "Initializing Wazuh indexer OpenSearch Security with securityadmin.sh"
+  if ! timeout "$INDEXER_SECURITY_INIT_TIMEOUT_SECONDS" podman exec --user 1000:0 wazuh-indexer bash -lc '
+    export JAVA_HOME=/usr/share/wazuh-indexer/jdk
+    exec /usr/share/wazuh-indexer/plugins/opensearch-security/tools/securityadmin.sh \
+      -cd /usr/share/wazuh-indexer/config/opensearch-security/ \
+      -nhnv \
+      -icl \
+      -cacert /usr/share/wazuh-indexer/config/certs/root-ca.pem \
+      -cert /usr/share/wazuh-indexer/config/certs/admin.pem \
+      -key /usr/share/wazuh-indexer/config/certs/admin-key.pem \
+      -h 127.0.0.1 \
+      -p 9200
+  '; then
+    fail_with_diagnostics "Wazuh indexer securityadmin.sh initialization failed"
+  fi
+
+  indexer_security_http_status="$(indexer_security_status)"
+  case "$indexer_security_http_status" in
+    2??) log "Wazuh indexer OpenSearch Security initialized" ;;
+    *) fail_with_diagnostics "Wazuh indexer OpenSearch Security was not initialized successfully (HTTP $indexer_security_http_status)" ;;
+  esac
+}
+
 log_starting "Starting MVP containers in dependency order (profile mvp)"
 compose --profile mvp config >/dev/null
 
@@ -392,6 +459,7 @@ compose --profile mvp config >/dev/null
 # This makes the readiness boundary visible and avoids launching dependents
 # while their network endpoints are still unavailable.
 compose --profile mvp up --detach coredns caddy wazuh-indexer mongodb uptime-kuma
+initialize_indexer_security
 wait_for_containers "base services" "secdns caddy wazuh-indexer graylog-mongo uptime-kuma"
 
 compose --profile mvp up --detach wazuh-manager graylog-datanode

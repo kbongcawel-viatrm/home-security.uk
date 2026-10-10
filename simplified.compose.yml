@@ -74,7 +74,7 @@ services:
       # that is still a healthy TLS listener.  Check transport availability without
       # treating the authentication response (or its self-signed certificate) as a
       # failure.
-      test: ["CMD-SHELL", "status=$(curl -ksS -o /dev/null -w '%{http_code}' https://localhost:9200 || true); case \"$status\" in 2*|3*|401) exit 0 ;; *) exit 1 ;; esac"]
+      test: ["CMD-SHELL", "status=$$(curl -ksS -o /dev/null -w '%{http_code}' https://localhost:9200 || true); case \"$${status}\" in 2*|3*|401) exit 0 ;; *) exit 1 ;; esac"]
       interval: 30s
       timeout: 10s
       retries: 20
