@@ -13,7 +13,7 @@ VALIDATE_ONLY="${VALIDATE_ONLY:-false}"
 REFRESH_IMAGES="${REFRESH_IMAGES:-false}"
 PULL_IMAGES="${PULL_IMAGES:-true}"
 IMAGE_PULL_TIMEOUT_SECONDS="${IMAGE_PULL_TIMEOUT_SECONDS:-180}"
-PUBLISH_IMAGES="${PUBLISH_IMAGES:-true}"
+PUBLISH_IMAGES="${PUBLISH_IMAGES:-false}"
 FIREWALL_ZONE="${FIREWALL_ZONE:-}"
 log() { printf '%s %s\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "$*"; }
 fail() { printf 'ERROR: %s\n' "$*" >&2; exit 1; }
@@ -66,9 +66,18 @@ env_value() {
   esac
   printf '%s' "$value"
 }
+HARBOR_IMAGE_TAG="${HARBOR_IMAGE_TAG:-$(env_value HARBOR_IMAGE_TAG)}"
+HARBOR_IMAGE_TAG="${HARBOR_IMAGE_TAG:-v1.1}"
+NEEDS_REGISTRY_AUTH=false
+for image_repo in secdns caddy wazuh-indexer wazuh-manager wazuh-dashboard graylog-mongo graylog-datanode graylog log-forwarder uptime-kuma uptime-kuma-sync; do
+  if ! podman image exists "$REGISTRY/$PROJECT/$image_repo:$HARBOR_IMAGE_TAG"; then
+    NEEDS_REGISTRY_AUTH=true
+    break
+  fi
+done
 
 validate_compose() {
-  rendered_compose="${TMPDIR:-/tmp}/home-security-mvp-compose.$$"
+  rendered_compose="$(mktemp "${TMPDIR:-/tmp}/home-security-mvp-compose.XXXXXX")"
   trap 'rm -f "$rendered_compose"' EXIT HUP INT TERM
 
   log "Validating Compose syntax and rendering"
@@ -131,9 +140,7 @@ if not ports:
 print(f"Compose sanity checks passed: {len(services)} services, {len(ports)} published ports")
 PY
 
-  cp "$rendered_compose" /tmp/home-security-mvp-compose.yml
-  rm -f "$rendered_compose"
-  trap - EXIT HUP INT TERM
+  FIREWALL_COMPOSE_FILE="$rendered_compose"
 }
 
 validate_compose
@@ -146,7 +153,7 @@ fi
 log "Whitelisting published ports from simplified.compose.yml"
 if command -v firewall-cmd >/dev/null 2>&1 && command -v sudo >/dev/null 2>&1; then
   if [ -z "$FIREWALL_ZONE" ]; then FIREWALL_ZONE="$(sudo firewall-cmd --get-default-zone)"; fi
-  python3 -c 'import yaml; d=yaml.safe_load(open("/tmp/home-security-mvp-compose.yml")); out=set();
+  FIREWALL_COMPOSE_FILE="$rendered_compose" python3 -c 'import os,yaml; d=yaml.safe_load(open(os.environ["FIREWALL_COMPOSE_FILE"])); out=set();
 for s in d.get("services",{}).values():
  for p in s.get("ports",[]):
   if isinstance(p,dict) and p.get("published"): out.add(str(p["published"])+"/"+p.get("protocol","tcp"))
@@ -162,6 +169,8 @@ print("\n".join(sorted(out)))' |
 else
   log "WARNING: firewall-cmd/sudo unavailable; skipping firewalld port configuration (MVP ports default to loopback)."
 fi
+rm -f "$FIREWALL_COMPOSE_FILE"
+trap - EXIT HUP INT TERM
 
 log "Creating persistent volumes (Compose will mount the declared volumes at startup)"
 project_name="$(sed -n 's/^COMPOSE_PROJECT_NAME=//p' .env | tail -n 1 | tr -d '"\047')"
@@ -180,7 +189,7 @@ HARBOR_CACHE_USERNAME="${HARBOR_CACHE_USERNAME:-$(env_value HARBOR_CACHE_USERNAM
 HARBOR_CACHE_PASSWORD="${HARBOR_CACHE_PASSWORD:-$(env_value HARBOR_CACHE_PASSWORD)}"
 ROBOT_HARBOR_USERNAME="${ROBOT_HARBOR_USERNAME:-$(env_value ROBOT_HARBOR_USERNAME)}"
 ROBOT_HARBOR_PASSWORD="${ROBOT_HARBOR_PASSWORD:-$(env_value ROBOT_HARBOR_PASSWORD)}"
-if [ "$PULL_IMAGES" = true ] || [ "$PUBLISH_IMAGES" = true ]; then
+if [ "$PUBLISH_IMAGES" = true ] || [ "$NEEDS_REGISTRY_AUTH" = true ]; then
   [ -n "$HARBOR_CACHE_USERNAME" ] || fail "HARBOR_CACHE_USERNAME is missing from .env"
   [ -n "$HARBOR_CACHE_PASSWORD" ] || fail "HARBOR_CACHE_PASSWORD is missing from .env"
   [ -n "$ROBOT_HARBOR_USERNAME" ] || fail "ROBOT_HARBOR_USERNAME is missing from .env"
@@ -257,6 +266,10 @@ WAZUH_VERSION="${WAZUH_VERSION:-$(env_value WAZUH_VERSION)}"
 WAZUH_VERSION="${WAZUH_VERSION:-4.14.4}"
 GRAYLOG_VERSION="${GRAYLOG_VERSION:-$(env_value GRAYLOG_VERSION)}"
 GRAYLOG_VERSION="${GRAYLOG_VERSION:-7.0.13}"
+FLUENT_BIT_VERSION="${FLUENT_BIT_VERSION:-$(env_value FLUENT_BIT_VERSION)}"
+FLUENT_BIT_VERSION="${FLUENT_BIT_VERSION:-3.2.10}"
+UPTIME_KUMA_VERSION="${UPTIME_KUMA_VERSION:-$(env_value UPTIME_KUMA_VERSION)}"
+UPTIME_KUMA_VERSION="${UPTIME_KUMA_VERSION:-1.23.16}"
 
 # Docker Hub source to Harbor repository used in simplified.compose.yml.
 while IFS=' ' read -r repo source; do
@@ -268,13 +281,20 @@ while IFS=' ' read -r repo source; do
     graylog-datanode|graylog)
       source="docker.io/graylog/$repo:$GRAYLOG_VERSION"
       ;;
-  esac
-  target_tag=latest
-  case "$repo" in
-    secdns|caddy|graylog-mongo)
-      target_tag=v1.1
+    graylog-mongo)
+      source="docker.io/library/mongo:$MONGO_VERSION"
+      ;;
+    log-forwarder)
+      source="docker.io/fluent/fluent-bit:$FLUENT_BIT_VERSION"
+      ;;
+    uptime-kuma)
+      source="docker.io/louislam/uptime-kuma:$UPTIME_KUMA_VERSION"
+      ;;
+    uptime-kuma-sync)
+      source="docker.io/library/python:3.12-alpine"
       ;;
   esac
+  target_tag="$HARBOR_IMAGE_TAG"
   target="$REGISTRY/$PROJECT/$repo:$target_tag"
   if [ "$REFRESH_IMAGES" != true ] && podman image exists "$target"; then
     log "Using cached local image $target"
@@ -458,18 +478,17 @@ deadline=$(( $(date +%s) + HEALTH_TIMEOUT_SECONDS ))
 last_monitor_signature=
 monitor_stuck_since="$(date +%s)"
 while [ "$(date +%s)" -lt "$deadline" ]; do
-  monitor_log="$(podman logs uptime-kuma-sync 2>&1 || true)"
-  monitor_signature="$(printf '%s' "$monitor_log" | tail -n 50)"
+  monitor_ready="$(podman inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' uptime-kuma-sync 2>/dev/null || true)"
   now="$(date +%s)"
-  if [ "$monitor_signature" != "$last_monitor_signature" ]; then
-    last_monitor_signature="$monitor_signature"
+  if [ "$monitor_ready" != "$last_monitor_signature" ]; then
+    last_monitor_signature="$monitor_ready"
     monitor_stuck_since="$now"
   fi
   monitors_ready=true
   old_ifs="$IFS"
   IFS='|'
   for monitor in $monitor_names; do
-    printf '%s\n' "$monitor_log" | grep -F "$monitor" >/dev/null || { monitors_ready=false; break; }
+    podman logs uptime-kuma-sync 2>&1 | grep -F "$monitor" >/dev/null || { monitors_ready=false; break; }
   done
   IFS="$old_ifs"
   [ "$monitors_ready" = true ] && break

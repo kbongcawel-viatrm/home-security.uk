@@ -15,6 +15,7 @@ from pathlib import Path
 
 
 MONITORS_PATH = Path("/uptime-kuma/monitors.yml")
+READY_PATH = Path("/var/run/uptime-kuma-sync/ready")
 
 
 def install_deps() -> None:
@@ -90,6 +91,8 @@ def sync_once() -> None:
             api.add_monitor(**payload)
 
     api.disconnect()
+    READY_PATH.parent.mkdir(parents=True, exist_ok=True)
+    READY_PATH.write_text("ready\n", encoding="utf-8")
 
 
 def main() -> int:

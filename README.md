@@ -47,6 +47,8 @@ systemctl --user enable --now podman.socket
 CONTAINER_ENGINE=podman sh scripts/start-stack.sh
 ```
 
+For the simplified MVP deployment, `scripts/start.sh` reuses local images and does not publish images to Harbor by default. Use `VALIDATE_ONLY=true sh scripts/start.sh` for a Compose preflight, `REFRESH_IMAGES=true sh scripts/start.sh` to refresh cached images, and `PUBLISH_IMAGES=true sh scripts/start.sh` only when explicitly preparing or publishing images. Set `HARBOR_IMAGE_TAG` to select a different pinned Harbor release tag.
+
 If the host uses firewalld and services need to be reachable beyond loopback, allow the stack's default published ports before startup:
 
 ```bash
