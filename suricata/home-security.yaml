@@ -1,0 +1,9 @@
+%YAML 1.1
+---
+# Home Security Lab address-group overrides.
+# Installed at /etc/suricata/home-security.yaml and included beneath
+# vars.address-groups in the host's /etc/suricata/suricata.yaml.
+#
+# Adjust HOME_NET to match your actual LAN/VLAN CIDRs before deployment.
+HOME_NET: "[10.0.0.0/8,172.16.0.0/12,192.168.0.0/16]"
+EXTERNAL_NET: "!$HOME_NET"
