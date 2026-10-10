@@ -7,9 +7,24 @@ COMPOSE_FILE="$ROOT/simplified.compose.yml"
 REGISTRY=demo.goharbor.io
 PROJECT=home-security-uk-registry
 HEALTH_TIMEOUT_SECONDS="${HEALTH_TIMEOUT_SECONDS:-900}"
+STUCK_TIMEOUT_SECONDS="${STUCK_TIMEOUT_SECONDS:-180}"
+POLL_INTERVAL_SECONDS="${POLL_INTERVAL_SECONDS:-10}"
+VALIDATE_ONLY="${VALIDATE_ONLY:-false}"
+REFRESH_IMAGES="${REFRESH_IMAGES:-false}"
+PULL_IMAGES="${PULL_IMAGES:-true}"
+IMAGE_PULL_TIMEOUT_SECONDS="${IMAGE_PULL_TIMEOUT_SECONDS:-180}"
+PUBLISH_IMAGES="${PUBLISH_IMAGES:-true}"
 FIREWALL_ZONE="${FIREWALL_ZONE:-}"
 log() { printf '%s %s\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "$*"; }
 fail() { printf 'ERROR: %s\n' "$*" >&2; exit 1; }
+diagnose_containers() {
+  log "Container diagnostics:"
+  podman ps -a --format 'table {{.Names}}\t{{.Status}}\t{{.Ports}}' >&2 || true
+}
+fail_with_diagnostics() {
+  diagnose_containers
+  fail "$1"
+}
 if [ -t 1 ] || [ "${FORCE_COLOR:-}" = 1 ]; then
   COLOR_GREEN=$(printf '\033[0;32m')
   COLOR_RESET=$(printf '\033[0m')
@@ -39,7 +54,7 @@ if [ ! -f .env ]; then
   cp .env.example .env
   log "Created .env from .env.example; review passwords and bind addresses before continuing."
 fi
-for cmd in podman podman-compose python3 curl jq; do
+for cmd in podman podman-compose python3 curl jq timeout; do
   command -v "$cmd" >/dev/null 2>&1 || fail "Required command not found: $cmd"
 done
 compose() { podman-compose -f "$COMPOSE_FILE" "$@"; }
@@ -52,9 +67,81 @@ env_value() {
   printf '%s' "$value"
 }
 
-log "Validating Compose configuration"
-compose --profile mvp config > /tmp/home-security-mvp-compose.yml \
-  || fail "podman-compose config failed"
+validate_compose() {
+  rendered_compose="${TMPDIR:-/tmp}/home-security-mvp-compose.$$"
+  trap 'rm -f "$rendered_compose"' EXIT HUP INT TERM
+
+  log "Validating Compose syntax and rendering"
+  python3 - "$COMPOSE_FILE" <<'PY'
+import sys
+from pathlib import Path
+
+try:
+    import yaml
+except ImportError:
+    print("PyYAML is required to validate Compose YAML syntax", file=sys.stderr)
+    raise SystemExit(1)
+
+path = Path(sys.argv[1])
+try:
+    document = yaml.safe_load(path.read_text(encoding="utf-8"))
+except yaml.YAMLError as exc:
+    print(f"Compose YAML syntax error: {exc}", file=sys.stderr)
+    raise SystemExit(1)
+
+if not isinstance(document, dict) or not isinstance(document.get("services"), dict):
+    print("Compose file must define a services mapping", file=sys.stderr)
+    raise SystemExit(1)
+if "mvp" not in {profile for service in document["services"].values() for profile in service.get("profiles", [])}:
+    print("Compose file does not define the mvp profile", file=sys.stderr)
+    raise SystemExit(1)
+PY
+
+  compose --profile mvp config >"$rendered_compose" \
+    || fail "podman-compose config failed"
+
+  python3 - "$rendered_compose" <<'PY'
+import sys
+from pathlib import Path
+
+import yaml
+
+document = yaml.safe_load(Path(sys.argv[1]).read_text(encoding="utf-8"))
+services = document.get("services", {})
+required = {
+    "coredns", "caddy", "wazuh-indexer", "wazuh-manager", "wazuh-dashboard",
+    "mongodb", "graylog-datanode", "graylog", "fluent-bit", "uptime-kuma",
+    "uptime-kuma-sync",
+}
+missing = sorted(required - services.keys())
+if missing:
+    raise SystemExit(f"Rendered Compose is missing required MVP services: {', '.join(missing)}")
+network = document.get("networks", {}).get("secnet")
+if not network or network.get("driver") != "bridge":
+    raise SystemExit("Rendered Compose must define secnet as a bridge network")
+for name in required:
+    if "secnet" not in services[name].get("networks", {} if isinstance(services[name].get("networks"), dict) else []):
+        raise SystemExit(f"Service {name} is not attached to secnet")
+ports = []
+for service in services.values():
+    for port in service.get("ports", []):
+        ports.append(str(port))
+if not ports:
+    raise SystemExit("Rendered Compose does not publish any host ports")
+print(f"Compose sanity checks passed: {len(services)} services, {len(ports)} published ports")
+PY
+
+  cp "$rendered_compose" /tmp/home-security-mvp-compose.yml
+  rm -f "$rendered_compose"
+  trap - EXIT HUP INT TERM
+}
+
+validate_compose
+
+if [ "$VALIDATE_ONLY" = true ]; then
+  log "Compose validation completed; skipping image pulls and container startup (VALIDATE_ONLY=true)"
+  exit 0
+fi
 
 log "Whitelisting published ports from simplified.compose.yml"
 if command -v firewall-cmd >/dev/null 2>&1 && command -v sudo >/dev/null 2>&1; then
@@ -93,12 +180,13 @@ HARBOR_CACHE_USERNAME="${HARBOR_CACHE_USERNAME:-$(env_value HARBOR_CACHE_USERNAM
 HARBOR_CACHE_PASSWORD="${HARBOR_CACHE_PASSWORD:-$(env_value HARBOR_CACHE_PASSWORD)}"
 ROBOT_HARBOR_USERNAME="${ROBOT_HARBOR_USERNAME:-$(env_value ROBOT_HARBOR_USERNAME)}"
 ROBOT_HARBOR_PASSWORD="${ROBOT_HARBOR_PASSWORD:-$(env_value ROBOT_HARBOR_PASSWORD)}"
-[ -n "$HARBOR_CACHE_USERNAME" ] || fail "HARBOR_CACHE_USERNAME is missing from .env"
-[ -n "$HARBOR_CACHE_PASSWORD" ] || fail "HARBOR_CACHE_PASSWORD is missing from .env"
-[ -n "$ROBOT_HARBOR_USERNAME" ] || fail "ROBOT_HARBOR_USERNAME is missing from .env"
-[ -n "$ROBOT_HARBOR_PASSWORD" ] || fail "ROBOT_HARBOR_PASSWORD is missing from .env"
+if [ "$PULL_IMAGES" = true ] || [ "$PUBLISH_IMAGES" = true ]; then
+  [ -n "$HARBOR_CACHE_USERNAME" ] || fail "HARBOR_CACHE_USERNAME is missing from .env"
+  [ -n "$HARBOR_CACHE_PASSWORD" ] || fail "HARBOR_CACHE_PASSWORD is missing from .env"
+  [ -n "$ROBOT_HARBOR_USERNAME" ] || fail "ROBOT_HARBOR_USERNAME is missing from .env"
+  [ -n "$ROBOT_HARBOR_PASSWORD" ] || fail "ROBOT_HARBOR_PASSWORD is missing from .env"
 
-log "Configuring Harbor cache registry access"
+  log "Configuring Harbor cache registry access"
 printf '%s\n' "$HARBOR_CACHE_PASSWORD" | podman login "$HARBOR_CACHE_HOST" \
   --username "$HARBOR_CACHE_USERNAME" --password-stdin
 
@@ -111,10 +199,14 @@ HARBOR_LABEL_NAME="home-security-uk"
 HARBOR_PROJECT_ID="$(curl -fsS -u "$ROBOT_HARBOR_USERNAME:$ROBOT_HARBOR_PASSWORD" \
   "$HARBOR_API/projects?name=$PROJECT" | jq -er '.[0].project_id')" \
   || fail "Unable to resolve Harbor project $PROJECT"
-HARBOR_LABEL_ID="$(curl -fsS -u "$ROBOT_HARBOR_USERNAME:$ROBOT_HARBOR_PASSWORD" \
+  HARBOR_LABEL_ID="$(curl -fsS -u "$ROBOT_HARBOR_USERNAME:$ROBOT_HARBOR_PASSWORD" \
   "$HARBOR_API/labels?scope=p&project_id=$HARBOR_PROJECT_ID" | \
   jq -er --arg label "$HARBOR_LABEL_NAME" '.[] | select(.name == $label) | .id' | head -n 1)" \
-  || fail "Unable to resolve Harbor project label $HARBOR_LABEL_NAME"
+    || fail "Unable to resolve Harbor project label $HARBOR_LABEL_NAME"
+  HARBOR_READY=true
+else
+  HARBOR_READY=false
+fi
 
 label_harbor_artifact() {
   image_repo="$1"
@@ -155,9 +247,6 @@ harbor_cache_reference() {
   printf '%s/%s/%s' "$HARBOR_CACHE_HOST" "$cache_project" "$image_path"
 }
 
-log "Pruning local container images before pulling current images"
-podman image prune --all --force
-
 COREDNS_VERSION="${COREDNS_VERSION:-$(env_value COREDNS_VERSION)}"
 COREDNS_VERSION="${COREDNS_VERSION:-1.11.3}"
 CADDY_VERSION="${CADDY_VERSION:-$(env_value CADDY_VERSION)}"
@@ -187,7 +276,30 @@ while IFS=' ' read -r repo source; do
       ;;
   esac
   target="$REGISTRY/$PROJECT/$repo:$target_tag"
-  log "Pulling current image $source"
+  if [ "$REFRESH_IMAGES" != true ] && podman image exists "$target"; then
+    log "Using cached local image $target"
+    continue
+  fi
+  [ "$PULL_IMAGES" = true ] || fail "Required local image $target is unavailable and PULL_IMAGES=false"
+  if podman image exists "$source"; then
+    log "Using cached local source image $source"
+    podman tag "$source" "$target"
+    if [ "$PUBLISH_IMAGES" = true ]; then
+      timeout "$IMAGE_PULL_TIMEOUT_SECONDS" podman push "$target" \
+        || fail "Unable to publish $target within ${IMAGE_PULL_TIMEOUT_SECONDS}s"
+      [ "$HARBOR_READY" = true ] && label_harbor_artifact "$repo" "$target_tag"
+    else
+      log "Keeping image local without publishing $target (PUBLISH_IMAGES=false)"
+    fi
+    continue
+  fi
+  log "Checking registry image $target"
+  if timeout "$IMAGE_PULL_TIMEOUT_SECONDS" podman pull "$target"; then
+    log "Using registry image $target"
+    continue
+  fi
+  [ "$PULL_IMAGES" = true ] || fail "Required local image $target is unavailable and PULL_IMAGES=false"
+  log "Registry image unavailable; preparing source image $source"
   cache_source=
   if cache_source=$(harbor_cache_reference "$source" 2>/dev/null); then
     :
@@ -196,19 +308,29 @@ while IFS=' ' read -r repo source; do
   fi
   if [ -n "$cache_source" ] && [ "$cache_source" != "$source" ]; then
     log "Trying Harbor cache image $cache_source"
-    if podman pull "$cache_source"; then
+    if podman image exists "$cache_source"; then
+      log "Using cached local source image $cache_source"
+      source="$cache_source"
+    elif timeout "$IMAGE_PULL_TIMEOUT_SECONDS" podman pull "$cache_source"; then
       source="$cache_source"
     else
       log "WARNING: Harbor cache pull failed; falling back to origin image $source"
-      podman pull "$source"
+      timeout "$IMAGE_PULL_TIMEOUT_SECONDS" podman pull "$source" \
+        || fail "Unable to pull $source within ${IMAGE_PULL_TIMEOUT_SECONDS}s"
     fi
   else
-    podman pull "$source"
+    timeout "$IMAGE_PULL_TIMEOUT_SECONDS" podman pull "$source" \
+      || fail "Unable to pull $source within ${IMAGE_PULL_TIMEOUT_SECONDS}s"
   fi
   podman tag "$source" "$target"
-  podman push "$target"
-  label_harbor_artifact "$repo" "$target_tag"
-done <<'IMAGES'
+  if [ "$PUBLISH_IMAGES" = true ]; then
+    timeout "$IMAGE_PULL_TIMEOUT_SECONDS" podman push "$target" \
+      || fail "Unable to publish $target within ${IMAGE_PULL_TIMEOUT_SECONDS}s"
+    [ "$HARBOR_READY" = true ] && label_harbor_artifact "$repo" "$target_tag"
+  else
+    log "Keeping image local without publishing $target (PUBLISH_IMAGES=false)"
+  fi
+done <<IMAGES
 secdns docker.io/coredns/coredns:${COREDNS_VERSION}
 caddy docker.io/library/caddy:${CADDY_VERSION}
 wazuh-indexer versioned
@@ -222,29 +344,73 @@ uptime-kuma docker.io/louislam/uptime-kuma:latest
 uptime-kuma-sync docker.io/library/python:3.12-alpine
 IMAGES
 
-log_starting "Starting MVP containers (profile mvp)"
+wait_for_containers() {
+  label="$1"
+  shift
+  wait_containers="$*"
+  wait_deadline=$(( $(date +%s) + HEALTH_TIMEOUT_SECONDS ))
+  log "Waiting for $label prerequisites: $wait_containers"
+  while :; do
+    wait_ready=true
+    for container in $wait_containers; do
+      status="$(podman inspect --format '{{.State.Status}} {{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$container" 2>/dev/null || true)"
+      case "$status" in
+        'running healthy'|'running none') ;;
+        *) wait_ready=false; break ;;
+      esac
+    done
+    [ "$wait_ready" = true ] && return 0
+    [ "$(date +%s)" -lt "$wait_deadline" ] || fail_with_diagnostics "$label prerequisites did not become ready: $wait_containers"
+    sleep "$POLL_INTERVAL_SECONDS"
+  done
+}
+
+log_starting "Starting MVP containers in dependency order (profile mvp)"
 compose --profile mvp config >/dev/null
-compose --profile mvp up --detach
+
+# Keep startup explicit even though Compose also has depends_on declarations.
+# This makes the readiness boundary visible and avoids launching dependents
+# while their network endpoints are still unavailable.
+compose --profile mvp up --detach coredns caddy wazuh-indexer mongodb uptime-kuma
+wait_for_containers "base services" "secdns caddy wazuh-indexer graylog-mongo uptime-kuma"
+
+compose --profile mvp up --detach wazuh-manager graylog-datanode
+wait_for_containers "indexer/database services" "wazuh-manager graylog-datanode"
+
+compose --profile mvp up --detach wazuh-dashboard graylog
+wait_for_containers "dashboard/logging services" "wazuh-dashboard graylog"
+
+compose --profile mvp up --detach fluent-bit uptime-kuma-sync
 
 log "Waiting for all MVP containers and health checks (timeout ${HEALTH_TIMEOUT_SECONDS}s)"
 containers="secdns caddy wazuh-indexer wazuh-manager wazuh-dashboard graylog-mongo graylog-datanode graylog fluent-bit uptime-kuma uptime-kuma-sync"
 deadline=$(( $(date +%s) + HEALTH_TIMEOUT_SECONDS ))
 container_total=0
 for container in $containers; do container_total=$((container_total + 1)); done
+last_signature=
+stuck_since="$(date +%s)"
 while :; do
   ready=true
   ready_count=0
+  signature=
   for container in $containers; do
     status="$(podman inspect --format '{{.State.Status}} {{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$container" 2>/dev/null || true)"
+    signature="$signature|$container=$status"
     case "$status" in
       'running healthy'|'running none') ready_count=$((ready_count + 1)) ;;
       *) ready=false ;;
     esac
   done
+  now="$(date +%s)"
+  if [ "$signature" != "$last_signature" ]; then
+    last_signature="$signature"
+    stuck_since="$now"
+  fi
   progress "$ready_count" "$container_total" "MVP readiness"
   [ "$ready" = true ] && break
-  [ "$(date +%s)" -lt "$deadline" ] || fail "Container readiness timed out; inspect with podman-compose -f simplified.compose.yml --profile mvp ps"
-  sleep 10
+  [ "$now" -lt "$deadline" ] || fail_with_diagnostics "Container readiness timed out"
+  [ $((now - stuck_since)) -lt "$STUCK_TIMEOUT_SECONDS" ] || fail_with_diagnostics "Container readiness made no progress for ${STUCK_TIMEOUT_SECONDS}s"
+  sleep "$POLL_INTERVAL_SECONDS"
 done
 printf '\n'
 
@@ -271,16 +437,17 @@ while [ "$(date +%s)" -lt "$deadline" ]; do
   if result="$(curl -fsS -u "$GRAYLOG_ROOT_USERNAME:$GRAYLOG_ROOT_PASSWORD" -H 'X-Requested-By: start.sh' --get --data-urlencode "query=message:$INGEST_MARKER" --data-urlencode range=300 "http://127.0.0.1:$HTTP_PORT/api/search/universal/relative" 2>/dev/null)"; then
     printf '%s' "$result" | python3 -c 'import json,sys; sys.exit(0 if json.load(sys.stdin).get("total_results",0)>0 else 1)' 2>/dev/null && { found=true; break; }
   fi
-  sleep 5
+  sleep "$POLL_INTERVAL_SECONDS"
 done
-[ "$found" = true ] || fail "Graylog did not index the GELF test event; check GELF input and credentials"
+[ "$found" = true ] || fail_with_diagnostics "Graylog did not index the GELF test event; check GELF input and credentials"
 log "Graylog GELF event is indexed"
 
 log "Checking Uptime Kuma"
 UPTIME_KUMA_PORT="${UPTIME_KUMA_PORT:-3002}"
 curl -fsS "http://127.0.0.1:$UPTIME_KUMA_PORT/" >/dev/null || fail "Uptime Kuma did not respond"
 UPTIME_KUMA_PASSWORD="${UPTIME_KUMA_PASSWORD:-$(env_value UPTIME_KUMA_PASSWORD)}"
-[ -n "${UPTIME_KUMA_USERNAME:-$(env_value UPTIME_KUMA_USERNAME)}" ] || fail "UPTIME_KUMA_USERNAME is missing from .env or the environment"
+UPTIME_KUMA_USERNAME="${UPTIME_KUMA_USERNAME:-$(env_value UPTIME_KUMA_USERNAME)}"
+[ -n "$UPTIME_KUMA_USERNAME" ] || fail "UPTIME_KUMA_USERNAME is missing from .env or the environment"
 if [ -z "$UPTIME_KUMA_PASSWORD" ]; then
   fail "Uptime Kuma is running, but no account password is configured. Finish first-time setup, set UPTIME_KUMA_USERNAME and UPTIME_KUMA_PASSWORD in .env, then rerun scripts/start.sh to provision MVP monitors."
 fi
@@ -288,8 +455,16 @@ fi
 log "Waiting for the Uptime Kuma sync helper to provision MVP monitors"
 monitor_names="Caddy health|CoreDNS UDP|Uptime Kuma|Graylog web/API|Graylog GELF UDP|Graylog syslog TCP|Graylog MongoDB|Graylog Data Node|Wazuh dashboard|Wazuh manager API|Wazuh indexer|Wazuh agent events UDP|Wazuh enrollment TCP"
 deadline=$(( $(date +%s) + HEALTH_TIMEOUT_SECONDS ))
+last_monitor_signature=
+monitor_stuck_since="$(date +%s)"
 while [ "$(date +%s)" -lt "$deadline" ]; do
   monitor_log="$(podman logs uptime-kuma-sync 2>&1 || true)"
+  monitor_signature="$(printf '%s' "$monitor_log" | tail -n 50)"
+  now="$(date +%s)"
+  if [ "$monitor_signature" != "$last_monitor_signature" ]; then
+    last_monitor_signature="$monitor_signature"
+    monitor_stuck_since="$now"
+  fi
   monitors_ready=true
   old_ifs="$IFS"
   IFS='|'
@@ -298,8 +473,9 @@ while [ "$(date +%s)" -lt "$deadline" ]; do
   done
   IFS="$old_ifs"
   [ "$monitors_ready" = true ] && break
-  sleep 5
+  [ $((now - monitor_stuck_since)) -lt "$STUCK_TIMEOUT_SECONDS" ] || fail_with_diagnostics "Uptime Kuma monitor sync made no progress for ${STUCK_TIMEOUT_SECONDS}s"
+  sleep "$POLL_INTERVAL_SECONDS"
 done
-[ "$monitors_ready" = true ] || fail "Uptime Kuma did not report all MVP monitors as added or updated; check podman logs uptime-kuma-sync and the Kuma credentials"
+[ "$monitors_ready" = true ] || fail_with_diagnostics "Uptime Kuma did not report all MVP monitors as added or updated; check podman logs uptime-kuma-sync and the Kuma credentials"
 log "Uptime Kuma reports all MVP service monitors provisioned"
 log "MVP startup checks completed"

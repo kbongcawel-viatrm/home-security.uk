@@ -6,6 +6,7 @@ ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
 COMPOSE_FILE="$ROOT/simplified.compose.yml"
 MODE="${1:-down}"
 TIMEOUT_SECONDS="${KILLSWITCH_TIMEOUT_SECONDS:-60}"
+PRUNE_IMAGES="${PRUNE_IMAGES:-true}"
 PROJECT_NAME="${COMPOSE_PROJECT_NAME:-}"
 
 log() {
@@ -56,6 +57,7 @@ status  Show MVP container status without changing resources.
 
 The script always targets simplified.compose.yml and the mvp profile.
 Set KILLSWITCH_TIMEOUT_SECONDS to change the graceful stop timeout.
+Set PRUNE_IMAGES=false to preserve local images during down; down prunes all unused images by default.
 USAGE
 }
 
@@ -141,6 +143,12 @@ case "$MODE" in
     compose --profile mvp down --remove-orphans --timeout "$TIMEOUT_SECONDS" || \
       log "Compose down reported an error; continuing with label-based container cleanup"
     remove_stale_containers
-    log "MVP containers removed; network, volumes, and images were preserved"
+    if [ "$PRUNE_IMAGES" = true ]; then
+      command -v podman >/dev/null 2>&1 && {
+        log "Pruning unused local images after MVP teardown"
+        podman image prune --all --force
+      }
+    fi
+    log "MVP containers removed; network and volumes were preserved"
     ;;
 esac
