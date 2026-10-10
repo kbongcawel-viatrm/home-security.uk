@@ -56,6 +56,7 @@ Environment overrides:
   COMPOSE_FILE=security-stack.compose.yml
   SECSTACK_PROFILES="brain network"
   PULL_IMAGES=true|false
+  CHECK_DUPLICATE_IMAGE_IDS=true|false
   APPLY_SYSCTL=true|false
   WAIT_HEALTH=true|false
   HEALTH_TIMEOUT_SECONDS=900
@@ -243,6 +244,99 @@ pull_images() {
   compose $(profile_args) pull
 }
 
+check_duplicate_image_ids() {
+  [ "${CHECK_DUPLICATE_IMAGE_IDS:-true}" = "true" ] || {
+    log "WARNING: duplicate image-ID guard disabled by CHECK_DUPLICATE_IMAGE_IDS=false"
+    return 0
+  }
+
+  require_command python3
+  log "checking resolved image IDs for duplicate images across selected services"
+
+  # Fail closed if this Compose provider cannot emit its resolved configuration
+  # as JSON. Parsing the resolved config avoids guessing at YAML interpolation.
+  if config_json="$(compose $(profile_args) config --format json)"; then
+    :
+  else
+    echo "Unable to run duplicate image-ID check: Compose config --format json failed." >&2
+    echo "Use a Compose provider supporting 'config --format json', or explicitly set CHECK_DUPLICATE_IMAGE_IDS=false to bypass this safety check." >&2
+    return 1
+  fi
+
+  if ! printf '%s\n' "${config_json}" | CONTAINER_ENGINE="${CONTAINER_ENGINE}" SELECTED_PROFILES="${PROFILES}" python3 -c '
+import collections
+import json
+import os
+import subprocess
+import sys
+
+try:
+    config = json.load(sys.stdin)
+except Exception as exc:
+    print(f"ERROR: unable to parse resolved Compose JSON: {exc}", file=sys.stderr)
+    raise SystemExit(2)
+
+all_services = config.get("services")
+if not isinstance(all_services, dict) or not all_services:
+    print("ERROR: resolved Compose configuration contains no services; refusing to start.", file=sys.stderr)
+    raise SystemExit(2)
+
+selected_profiles = set(os.environ.get("SELECTED_PROFILES", "").split())
+services = {}
+for name, service in all_services.items():
+    profiles = service.get("profiles", []) if isinstance(service, dict) else []
+    # Services without profiles are always active; profiled services are active
+    # only when at least one of their profiles was selected.
+    if not profiles or selected_profiles.intersection(profiles):
+        services[name] = service
+if not services:
+    print("ERROR: no services are active for the selected profiles; refusing to start.", file=sys.stderr)
+    raise SystemExit(2)
+
+engine = os.environ["CONTAINER_ENGINE"]
+by_id = collections.defaultdict(list)
+missing = []
+
+for service_name, service in sorted(services.items()):
+    image = service.get("image") if isinstance(service, dict) else None
+    if not image:
+        # A build-only service has no fixed image ref at config time. This stack
+        # is expected to declare images, so fail closed rather than skip it.
+        missing.append(f"{service_name}: no resolved image reference")
+        continue
+    result = subprocess.run(
+        [engine, "image", "inspect", "--format", "{{.Id}}", image],
+        text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+    )
+    image_id = result.stdout.strip().splitlines()[0] if result.returncode == 0 and result.stdout.strip() else ""
+    if not image_id:
+        missing.append(f"{service_name}: cannot inspect image {image!r}; pull images first or check the image reference")
+        continue
+    by_id[image_id.lower()].append((service_name, image))
+
+if missing:
+    print("ERROR: image-ID guard could not verify every selected service:", file=sys.stderr)
+    for item in missing:
+        print(f"  - {item}", file=sys.stderr)
+    raise SystemExit(2)
+
+duplicates = {image_id: items for image_id, items in by_id.items() if len(items) > 1}
+if duplicates:
+    print("ERROR: duplicate image IDs detected across selected Compose services.", file=sys.stderr)
+    print("Startup blocked before containers are created or updated.", file=sys.stderr)
+    for image_id, items in sorted(duplicates.items()):
+        print(f"  Image ID: {image_id}", file=sys.stderr)
+        for service_name, image in items:
+            print(f"    service={service_name} image={image}", file=sys.stderr)
+    print("Correct the Harbor tags/builds so distinct services resolve to their intended images.", file=sys.stderr)
+    raise SystemExit(1)
+
+print(f"Image-ID guard passed: {len(services)} selected services resolve to distinct image IDs.")
+'; then
+    return 1
+  fi
+}
+
 wait_for_health() {
   [ "${WAIT_HEALTH}" = "true" ] || {
     log "health wait disabled"
@@ -341,6 +435,8 @@ start_stack() {
   if [ "${PULL_IMAGES}" = "true" ]; then
     pull_images
   fi
+
+  check_duplicate_image_ids
 
   log "starting/updating services without tearing down the existing stack"
   compose $(profile_args) up -d --build

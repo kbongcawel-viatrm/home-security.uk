@@ -19,6 +19,12 @@
 # This is a lab stack. Production Wazuh, Graylog, TheHive, Shuffle, and
 # Greenbone deployments should use each vendor's full hardening guidance,
 # certificate workflow, secret management, and backup design.
+# Before launching, use scripts/start-stack.sh rather than calling Compose up
+# directly: its duplicate-image-ID guard resolves the selected profile's config
+# and blocks startup if multiple services resolve to the same local image ID.
+# This catches accidental Harbor retagging/pushes that point distinct service
+# repositories at the same image; it does not infer whether shared images are
+# intentional.
 
 name: ${COMPOSE_PROJECT_NAME:-home-security-uk}
 
