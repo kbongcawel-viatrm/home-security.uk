@@ -209,9 +209,10 @@ services:
     hostname: graylog
     profiles: ["mvp"]
     cpus: 0.25
-    mem_limit: 512m
+    mem_limit: 1g
     environment:
       GRAYLOG_NODE_ID_FILE: /usr/share/graylog/data/config/node-id
+      GRAYLOG_SERVER_JAVA_OPTS: "${GRAYLOG_SERVER_JAVA_OPTS:--Xms256m -Xmx256m}"
       GRAYLOG_PASSWORD_SECRET: "${GRAYLOG_PASSWORD_SECRET}"
       GRAYLOG_ROOT_PASSWORD_SHA2: "${GRAYLOG_ROOT_PASSWORD_SHA2}"
       GRAYLOG_HTTP_BIND_ADDRESS: 0.0.0.0:9000
