@@ -7,6 +7,7 @@ PROJECT_ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
 PROJECT_NAME="${COMPOSE_PROJECT_NAME:-}"
 PROFILES="${SECSTACK_PROFILES:-all}"
 TIMEOUT_SECONDS="${KILLSWITCH_TIMEOUT_SECONDS:-60}"
+PRUNE_IMAGES="${PRUNE_IMAGES:-true}"
 MODE="${1:-down}"
 CONTAINER_ENGINE="${CONTAINER_ENGINE:-}"
 
@@ -29,6 +30,7 @@ Environment:
   COMPOSE_FILE                  Compose file path relative to the project root (default: security-stack.compose.yml).
   SECSTACK_PROFILES             Compose profiles for the Compose fallback (default: all).
   KILLSWITCH_TIMEOUT_SECONDS    Graceful stop timeout (default: 60).
+  PRUNE_IMAGES                  Prune unused local images after down (default: true).
   CONTAINER_ENGINE              docker or podman; auto-selects Podman first, then Docker.
 
 Only resources carrying the project's Compose labels are removed. Images are never pruned.
@@ -160,7 +162,8 @@ main() {
       ;;
     down)
       # Best-effort Compose teardown first, then label sweeps catch inactive-profile resources.
-      # Do not use --rmi, image prune, or system-wide prune: images must be retained.
+      # Do not use --rmi or system-wide prune; only explicitly prune unused images
+      # after project teardown when PRUNE_IMAGES=true.
       # shellcheck disable=SC2046
       compose $(profile_args) down --remove-orphans --volumes --timeout "$TIMEOUT_SECONDS" || \
         log "Compose down reported an error; continuing with project-label cleanup"
@@ -168,6 +171,10 @@ main() {
       for_each_project_resource containers remove
       for_each_project_resource networks remove
       for_each_project_resource volumes remove
+      if [ "$PRUNE_IMAGES" = true ] && command -v podman >/dev/null 2>&1; then
+        log "Pruning unused local images after project teardown"
+        podman image prune --all --force
+      fi
       ;;
   esac
 

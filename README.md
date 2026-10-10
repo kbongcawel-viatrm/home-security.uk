@@ -47,6 +47,17 @@ systemctl --user enable --now podman.socket
 CONTAINER_ENGINE=podman sh scripts/start-stack.sh
 ```
 
+For the simplified MVP deployment, `scripts/start.sh` reuses local images and does not publish images to Harbor by default. Use `VALIDATE_ONLY=true sh scripts/start.sh` for a Compose preflight, `REFRESH_IMAGES=true sh scripts/start.sh` to refresh cached images, and `PUBLISH_IMAGES=true sh scripts/start.sh` only when explicitly preparing or publishing images. Set `HARBOR_IMAGE_TAG` to select a different pinned Harbor release tag.
+
+The MVP startup order deliberately starts Graylog while `graylog-datanode` is
+still in first-run preflight. Open `https://graylog.home-security.local` (or
+the host's configured Graylog URL) and complete the Graylog Data Node
+certificate/security setup before the Data Node health check can pass. Caddy
+terminates analyst-facing TLS, but it does not replace the Data Node's
+internal OpenSearch HTTP and transport certificates; those must be generated
+or uploaded through Graylog's preflight flow. The default local lab uses the
+image's self-signed/internal certificates and Caddy's internal CA.
+
 If the host uses firewalld and services need to be reachable beyond loopback, allow the stack's default published ports before startup:
 
 ```bash

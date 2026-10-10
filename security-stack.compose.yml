@@ -42,7 +42,7 @@ services:
   secdns:
     image: demo.goharbor.io/home-security-uk-registry/secdns:v1.1
     container_name: secdns
-    profiles: ["dns", "all"]
+    profiles: ["dns", "mvp", "all"]
     command: ["-conf", "/etc/coredns/Corefile"]
     ports:
       - "${SECDNS_HOST_IP:-127.0.0.1}:${SECDNS_PORT:-1053}:53/udp"
@@ -63,12 +63,28 @@ services:
   caddy:
     image: demo.goharbor.io/home-security-uk-registry/caddy:v1.1
     container_name: caddy
-    profiles: ["ops", "dashboard", "all"]
+    profiles: ["ops", "dashboard", "mvp", "all"]
+    ports:
+      - "${FQDN_HTTP_HOST_IP:-127.0.0.1}:${FQDN_HTTP_PORT:-8081}:80"
+      - "${FQDN_HTTPS_HOST_IP:-127.0.0.1}:${FQDN_HTTPS_PORT:-8443}:443"
     volumes:
+      - "./The Hands/FQDN proxy - Caddy/Caddyfile:/etc/caddy/Caddyfile:ro"
       - "./The Hands/reports/dashboard-ui:/usr/share/caddy:ro"
       - "./The Hands/reports/data:/usr/share/caddy/reports:ro"
+      - caddy-logs:/var/log/caddy
     networks:
-      - secnet
+      secnet:
+        ipv4_address: "${FQDN_PROXY_IPV4:-10.77.0.80}"
+        aliases:
+          - fqdn-proxy
+          - caddy.home-security.local
+          - uptimekuma.home-security.local
+          - graylog.home-security.local
+          - wazuh.home-security.local
+          - wazuh-api.home-security.local
+          - wazuh-indexer.home-security.local
+          - graylog-datanode.home-security.local
+          - reports.home-security.local
     restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost:80 >/dev/null || exit 1"]
@@ -126,11 +142,13 @@ services:
   uptime-kuma:
     image: demo.goharbor.io/home-security-uk-registry/uptime-kuma:v1.1
     container_name: uptime-kuma
-    profiles: ["ops", "monitor", "all"]
+    profiles: ["ops", "monitor", "mvp", "all"]
     volumes:
       - uptime-kuma-data:/app/data
     networks:
       - secnet
+    dns:
+      - "${SECDNS_IPV4:-10.77.0.53}"
     ports:
       - "${STACK_BIND_IP:-127.0.0.1}:${UPTIME_KUMA_PORT:-3002}:3001"
     restart: unless-stopped
@@ -144,7 +162,7 @@ services:
   uptime-kuma-sync:
     image: demo.goharbor.io/home-security-uk-registry/uptime-kuma-sync:v1.1
     container_name: uptime-kuma-sync
-    profiles: ["ops", "monitor", "all"]
+    profiles: ["ops", "monitor", "mvp", "all"]
     environment:
       UPTIME_KUMA_URL: "${UPTIME_KUMA_URL:-http://uptime-kuma:3001}"
       UPTIME_KUMA_USERNAME: "${UPTIME_KUMA_USERNAME:-admin}"
@@ -157,6 +175,8 @@ services:
     entrypoint: ["python", "/uptime-kuma/scripts/sync-monitors.py"]
     networks:
       - secnet
+    dns:
+      - "${SECDNS_IPV4:-10.77.0.53}"
     restart: unless-stopped
     depends_on:
       uptime-kuma:
@@ -202,7 +222,7 @@ services:
   log-forwarder:
     image: demo.goharbor.io/home-security-uk-registry/log-forwarder:v1.1
     container_name: log-forwarder
-    profiles: ["ops", "logs", "brain", "all"]
+    profiles: ["ops", "logs", "brain", "mvp", "all"]
     volumes:
       - "./The Eyes/Fluent Bit/fluent-bit.conf:/fluent-bit/etc/fluent-bit.conf:ro"
       - "./The Eyes/Fluent Bit/parsers.conf:/fluent-bit/etc/parsers.conf:ro"
@@ -222,7 +242,7 @@ services:
   graylog-bootstrap:
     image: demo.goharbor.io/home-security-uk-registry/graylog-bootstrap:v1.1
     container_name: graylog-bootstrap
-    profiles: ["ops", "logs", "brain", "all"]
+    profiles: ["ops", "logs", "brain", "mvp", "all"]
     environment:
       GRAYLOG_API_URL: "${GRAYLOG_API_URL:-http://graylog:9000/api}"
       GRAYLOG_ROOT_USERNAME: "${GRAYLOG_ROOT_USERNAME:-admin}"
@@ -419,7 +439,7 @@ services:
   wazuh-indexer:
     image: demo.goharbor.io/home-security-uk-registry/wazuh-indexer:v1.1
     container_name: wazuh-indexer
-    profiles: ["brain", "all"]
+    profiles: ["brain", "mvp", "all"]
     environment:
       OPENSEARCH_JAVA_OPTS: "${WAZUH_INDEXER_JAVA_OPTS:--Xms1g -Xmx1g}"
       bootstrap.memory_lock: "true"
@@ -446,9 +466,11 @@ services:
     image: demo.goharbor.io/home-security-uk-registry/wazuh-manager:v1.1
     container_name: wazuh-manager
     hostname: wazuh-manager
-    profiles: ["brain", "all"]
+    profiles: ["brain", "mvp", "all"]
     environment:
       INDEXER_URL: "https://wazuh-indexer:9200"
+      INDEXER_USERNAME: "${WAZUH_INDEXER_USERNAME:-admin}"
+      INDEXER_PASSWORD: "${WAZUH_INDEXER_PASSWORD:-admin}"
       FILEBEAT_SSL_VERIFICATION_MODE: "${WAZUH_FILEBEAT_SSL_VERIFICATION_MODE:-none}"
     ports:
       - "${STACK_BIND_IP:-127.0.0.1}:${WAZUH_EVENTS_PORT:-1514}:1514/udp"
@@ -467,7 +489,9 @@ services:
       wazuh-indexer:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "curl -kfsS https://localhost:55000 >/dev/null || exit 1"]
+      # The API intentionally returns 401 without a token. That proves the
+      # HTTPS listener is available, so do not use curl -f here.
+      test: ["CMD-SHELL", "status=$$(curl -ksS -o /dev/null -w '%{http_code}' https://localhost:55000 || true); case \"$${status}\" in 2*|3*|401) exit 0 ;; *) exit 1 ;; esac"]
       interval: 30s
       timeout: 10s
       retries: 20
@@ -476,14 +500,18 @@ services:
   wazuh-dashboard:
     image: demo.goharbor.io/home-security-uk-registry/wazuh-dashboard:v1.1
     container_name: wazuh-dashboard
-    profiles: ["brain", "all"]
+    profiles: ["brain", "mvp", "all"]
     environment:
       INDEXER_URL: "https://wazuh-indexer:9200"
       WAZUH_API_URL: "https://wazuh-manager"
-      DASHBOARD_USERNAME: "${WAZUH_DASHBOARD_USERNAME:-admin}"
-      DASHBOARD_PASSWORD: "${WAZUH_DASHBOARD_PASSWORD:-SecretPassword}"
+      # These credentials are for the dashboard's internal OpenSearch service
+      # account, not the browser login. The current lab indexer uses defaults.
+      DASHBOARD_USERNAME: "${WAZUH_DASHBOARD_SERVICE_USERNAME:-kibanaserver}"
+      DASHBOARD_PASSWORD: "${WAZUH_DASHBOARD_SERVICE_PASSWORD:-kibanaserver}"
     ports:
       - "${STACK_BIND_IP:-127.0.0.1}:${WAZUH_DASHBOARD_PORT:-5601}:5601"
+    volumes:
+      - "./The Brain/Wazuh/dashboard/opensearch_dashboards.yml:/usr/share/wazuh-dashboard/config/opensearch_dashboards.yml:ro,z"
     networks:
       - secnet
     depends_on:
@@ -492,7 +520,9 @@ services:
       wazuh-manager:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "curl -kfsS https://localhost:5601/status >/dev/null || exit 1"]
+      # /status requires an authenticated session and returns 401 when the
+      # dashboard is healthy. The root route redirects to the login page.
+      test: ["CMD-SHELL", "curl -kfsS https://localhost:5601/ >/dev/null || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 20
@@ -502,7 +532,7 @@ services:
   graylog-mongo:
     image: demo.goharbor.io/home-security-uk-registry/graylog-mongo:v1.1
     container_name: graylog-mongo
-    profiles: ["brain", "all"]
+    profiles: ["brain", "mvp", "all"]
     volumes:
       - graylog-mongo-data:/data/db
     networks:
@@ -517,7 +547,7 @@ services:
   graylog-datanode:
     image: demo.goharbor.io/home-security-uk-registry/graylog-datanode:v1.1
     container_name: graylog-datanode
-    profiles: ["brain", "all"]
+    profiles: ["brain", "mvp", "all"]
     hostname: graylog-datanode
     environment:
       GRAYLOG_DATANODE_NODE_ID_FILE: /var/lib/graylog-datanode/node-id
@@ -539,7 +569,10 @@ services:
       graylog-mongo:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://localhost:9200 >/dev/null || exit 1"]
+      # The Data Node image does not include curl. OpenSearch port 9200 is
+      # intentionally closed until Graylog completes first-run preflight and
+      # provisions its security certificates.
+      test: ["CMD-SHELL", "bash -c '</dev/tcp/127.0.0.1/9200' >/dev/null 2>&1"]
       interval: 30s
       timeout: 10s
       retries: 20
@@ -548,7 +581,7 @@ services:
   graylog:
     image: demo.goharbor.io/home-security-uk-registry/graylog:v1.1
     container_name: graylog
-    profiles: ["brain", "all"]
+    profiles: ["brain", "mvp", "all"]
     hostname: graylog
     environment:
       GRAYLOG_NODE_ID_FILE: /usr/share/graylog/data/config/node-id
@@ -557,13 +590,16 @@ services:
       GRAYLOG_HTTP_BIND_ADDRESS: "0.0.0.0:9000"
       GRAYLOG_HTTP_EXTERNAL_URI: "${GRAYLOG_HTTP_EXTERNAL_URI:-http://localhost:9000/}"
       GRAYLOG_MONGODB_URI: "mongodb://graylog-mongo:27017/graylog"
-      GRAYLOG_ELASTICSEARCH_HOSTS: "http://graylog-datanode:9200"
+      # Leave the search backend unset during first-run so Graylog can expose
+      # its preflight UI and provision the Data Node security certificates.
     entrypoint: ["/usr/bin/tini", "--", "/docker-entrypoint.sh"]
     depends_on:
       graylog-mongo:
         condition: service_healthy
       graylog-datanode:
-        condition: service_healthy
+        # Graylog must start while Data Node is still in first-run preflight;
+        # waiting for Data Node health here creates a bootstrap deadlock.
+        condition: service_started
     ports:
       - "${STACK_BIND_IP:-127.0.0.1}:${GRAYLOG_HTTP_PORT:-9000}:9000"
       - "${STACK_BIND_IP:-127.0.0.1}:${GRAYLOG_GELF_UDP_PORT:-12201}:12201/udp"

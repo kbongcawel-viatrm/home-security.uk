@@ -39,7 +39,7 @@ Usage:
   sh scripts/start-stack.sh build PROFILE
 
 Profiles:
-  brain network ir vuln all dns secrets ghost llm ops dashboard monitor logs
+  mvp brain network ir vuln all dns secrets ghost llm ops dashboard monitor logs backup scanner shield
   backup scanner shield
 
 Examples:
@@ -67,7 +67,7 @@ EOF
 
 valid_profile() {
   case "$1" in
-    brain|network|ir|vuln|all|dns|secrets|ghost|llm|ops|dashboard|monitor|logs|backup|scanner|shield) return 0 ;;
+    mvp|brain|network|ir|vuln|all|dns|secrets|ghost|llm|ops|dashboard|monitor|logs|backup|scanner|shield) return 0 ;;
     *) return 1 ;;
   esac
 }

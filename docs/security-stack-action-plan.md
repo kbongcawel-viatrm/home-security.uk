@@ -50,7 +50,7 @@ Authorized test endpoint or synthetic event
   -> Graylog ingestion and search
   -> analyst investigation
   -> Uptime Kuma monitoring
-  -> backup and recovery
+## [REMOVED]  -> backup and recovery
 ```
 
 ### MVP services
@@ -61,7 +61,7 @@ Authorized test endpoint or synthetic event
 - Graylog, Graylog Data Node, and MongoDB
 - Fluent Bit
 - Uptime Kuma
-- Volume backup service
+## [REMOVED] - Volume backup service
 
 ### Deferred services
 
@@ -92,8 +92,8 @@ mkdir -p \
 **Estimate:** 0.5 day  
 **Dependencies:** None
 
-- [ ] Add a supported `mvp` profile to `security-stack.compose.yml`.
-- [ ] Set `SECSTACK_PROFILES=mvp` in the local deployment instructions.
+- [x] Use the supported `mvp` profile in `simplified.compose.yml`.
+- [x] Use `scripts/start.sh` as the local MVP startup entry point.
 - [ ] Confirm one authorized test endpoint or synthetic event.
 - [ ] Record supported host OS, engine, Compose provider, CPU, RAM, disk, and sensor interface.
 - [ ] Define the minimum pass criteria in the release issue.
@@ -101,8 +101,7 @@ mkdir -p \
 **Commands:**
 
 ```sh
-sh scripts/start-stack.sh config mvp
-podman-compose -f security-stack.compose.yml --profile mvp config >/tmp/mvp-config.yml
+podman-compose -f simplified.compose.yml --profile mvp config >/tmp/mvp-config.yml
 ```
 
 **Evidence:** `compose/mvp-scope.md`, `compose/mvp-config.yml`.
@@ -123,7 +122,7 @@ podman-compose -f security-stack.compose.yml --profile mvp config >/tmp/mvp-conf
 **Commands:**
 
 ```sh
-podman-compose -f security-stack.compose.yml --profile mvp config >/tmp/mvp-config.yml
+podman-compose -f simplified.compose.yml --profile mvp config >/tmp/mvp-config.yml
 grep -nE 'shuffle|ansible|orborus|docker.sock|podman.sock' /tmp/mvp-config.yml
 ```
 
@@ -146,7 +145,7 @@ grep -nE 'shuffle|ansible|orborus|docker.sock|podman.sock' /tmp/mvp-config.yml
 **Commands:**
 
 ```sh
-podman-compose -f security-stack.compose.yml --profile mvp config >/tmp/mvp-config.yml
+podman-compose -f simplified.compose.yml --profile mvp config >/tmp/mvp-config.yml
 grep -nE 'greenbone|openvas|ghost|portainer|suricata|zeek' /tmp/mvp-config.yml
 ```
 
@@ -205,7 +204,7 @@ grep -nE 'docker.sock|podman.sock' /tmp/mvp-config.yml || true
 
 ```sh
 grep -nE 'admin|SecretPassword|CHANGE_ME|latest|nightly' .env.example security-stack.compose.yml
-sh scripts/start-stack.sh config mvp
+podman-compose -f simplified.compose.yml --profile mvp config
 ```
 
 **Evidence:** `security/default-secret-rejection.txt`.
@@ -248,18 +247,19 @@ sh scripts/start-stack.sh config mvp
 **Estimate:** 1 day  
 **Dependencies:** S07
 
-- [ ] Mount `The Hands/FQDN proxy - Caddy/Caddyfile` at `/etc/caddy/Caddyfile`.
-- [ ] Publish the configured HTTP and HTTPS host ports.
-- [ ] Assign `${FQDN_PROXY_IPV4}` to Caddy on `secnet`.
-- [ ] Mount `caddy-logs` at `/var/log/caddy`.
-- [ ] Add a `fqdn-proxy` network alias or rename every reference to `caddy`.
-- [ ] Confirm Caddy routes to Graylog and Wazuh.
+- ~~[x] Mount `The Hands/FQDN proxy - Caddy/Caddyfile` at `/etc/caddy/Caddyfile`.~~
+- ~~[x] Publish the configured HTTP and HTTPS host ports.~~
+- ~~[x] Assign `${FQDN_PROXY_IPV4}` to Caddy on `secnet`.~~
+- ~~[x] Mount `caddy-logs` at `/var/log/caddy`.~~
+- ~~[x] Add a `fqdn-proxy` network alias or rename every reference to `caddy`.~~
+- [ ] Confirm Caddy routes to Graylog.
+- ~~[x] Confirm Caddy routes to Wazuh Dashboard (verified at `https://wazuh.home-security.local:8443/app/login`).~~
 
 **Commands:**
 
 ```sh
-podman-compose -f security-stack.compose.yml --profile mvp config >/tmp/mvp-config.yml
-podman-compose -f security-stack.compose.yml --profile mvp up -d caddy secdns
+podman-compose -f simplified.compose.yml --profile mvp config >/tmp/mvp-config.yml
+podman-compose -f simplified.compose.yml --profile mvp up -d caddy coredns
 dig @127.0.0.1 -p 1053 graylog.hq-sec.local
 curl -kfsS https://graylog.hq-sec.local/
 ```
@@ -276,16 +276,14 @@ curl -kfsS https://graylog.hq-sec.local/
 
 - [ ] Identify every `depends_on` edge crossing profile boundaries.
 - [ ] Define supported bundles: `mvp`, `brain`, `logs`, `dashboard`, `network`, `ir`, `vuln`, and `all`.
-- [ ] Make `scripts/start-stack.sh` expand required dependencies or reject unsupported combinations.
+- [ ] Keep `scripts/start.sh` as the only supported simplified-MVP startup path.
 - [ ] Test clean startup and shutdown from an empty project state.
 
 **Commands:**
 
 ```sh
-sh scripts/start-stack.sh down mvp
-sh scripts/start-stack.sh up mvp
-sh scripts/start-stack.sh ps mvp
-sh scripts/start-stack.sh down mvp
+podman-compose -f simplified.compose.yml --profile mvp down
+sh scripts/start.sh
 ```
 
 **Evidence:** `compose/mvp-start-stop.txt`.
@@ -299,14 +297,15 @@ sh scripts/start-stack.sh down mvp
 **Dependencies:** F02
 
 - [ ] Replace process-only checks with endpoint/readiness checks.
-- [ ] Add checks for CoreDNS, Caddy, Graylog API, Wazuh API/indexer, and Uptime Kuma.
+- [ ] Add checks for CoreDNS, Caddy, Graylog API, and Uptime Kuma.
+- ~~[x] Add checks for Wazuh API/indexer and Dashboard login readiness.~~
 - [ ] Use `service_healthy` dependencies where appropriate.
 - [ ] Define startup timeout and restart expectations.
 
 **Commands:**
 
 ```sh
-podman-compose -f security-stack.compose.yml --profile mvp ps
+podman-compose -f simplified.compose.yml --profile mvp ps
 podman inspect <container> --format '{{json .State.Health}}'
 ```
 
@@ -329,7 +328,7 @@ podman inspect <container> --format '{{json .State.Health}}'
 
 ```sh
 podman logs graylog-bootstrap --tail 100
-podman-compose -f security-stack.compose.yml exec log-forwarder sh -c 'printf test | nc -u graylog 12201'
+podman-compose -f simplified.compose.yml --profile mvp exec fluent-bit sh -c 'printf test | nc -u graylog 12201'
 ```
 
 **Evidence:** `integration/graylog-inputs.txt`.
@@ -433,7 +432,7 @@ find 'The Hands/backups' -maxdepth 3 -type f | sort
 
 ```sh
 sh -n scripts/*.sh
-podman-compose -f security-stack.compose.yml --profile mvp config
+podman-compose -f simplified.compose.yml --profile mvp config
 ```
 
 **Evidence:** `compose/consistency-check.txt`.
@@ -463,7 +462,7 @@ podman-compose -f security-stack.compose.yml --profile mvp config
 **Dependencies:** Priority 1 and Priority 2 gates
 
 - [ ] Prepare `.env` with approved non-default secrets.
-- [ ] Start only `mvp` through `scripts/start-stack.sh`.
+- [ ] Start only `mvp` through `scripts/start.sh` using `simplified.compose.yml`.
 - [ ] Record engine, Compose provider, image source, startup duration, failed containers, and restarts.
 - [ ] Confirm all MVP healthchecks pass.
 

@@ -1,15 +1,9 @@
-# All local service FQDNs resolve to fqdn-proxy. HTTP routing is handled by Caddy.
-10.77.0.80 wazuh.hq-sec.local
-10.77.0.80 wazuh-api.hq-sec.local
-10.77.0.80 wazuh-indexer.hq-sec.local
-10.77.0.80 graylog.hq-sec.local
-10.77.0.80 thehive.hq-sec.local
-10.77.0.80 shuffle.hq-sec.local
-10.77.0.80 shuffle-api.hq-sec.local
-10.77.0.80 velociraptor.hq-sec.local
-10.77.0.80 greenbone.hq-sec.local
-10.77.0.80 vault.hq-sec.local
-10.77.0.80 reports.hq-sec.local
-10.77.0.80 uptime.hq-sec.local
-10.77.0.80 ghost.hq-sec.local
-10.77.0.80 coredns.hq-sec.local
+# MVP analyst-facing names resolve to Caddy's fixed secnet address.
+10.77.0.80 caddy.home-security.local
+10.77.0.80 uptimekuma.home-security.local
+10.77.0.80 graylog.home-security.local
+10.77.0.80 wazuh.home-security.local
+10.77.0.80 wazuh-api.home-security.local
+10.77.0.80 wazuh-indexer.home-security.local
+10.77.0.80 graylog-datanode.home-security.local
+10.77.0.80 reports.home-security.local

@@ -15,6 +15,7 @@ from pathlib import Path
 
 
 MONITORS_PATH = Path("/uptime-kuma/monitors.yml")
+READY_PATH = Path("/var/run/uptime-kuma-sync/ready")
 
 
 def install_deps() -> None:
@@ -64,11 +65,11 @@ def sync_once() -> None:
     from uptime_kuma_api import UptimeKumaApi
 
     url = os.environ.get("UPTIME_KUMA_URL", "http://uptime-kuma:3001")
-    username = os.environ.get("UPTIME_KUMA_USERNAME", "admin")
+    username = os.environ.get("UPTIME_KUMA_USERNAME", "")
     password = os.environ.get("UPTIME_KUMA_PASSWORD", "")
 
-    if not password:
-        print("UPTIME_KUMA_PASSWORD is empty; skipping monitor sync until Kuma setup is complete.")
+    if not username or not password:
+        print("UPTIME_KUMA_USERNAME and UPTIME_KUMA_PASSWORD must be populated; skipping monitor sync until Kuma setup is complete.")
         return
 
     desired = yaml.safe_load(MONITORS_PATH.read_text(encoding="utf-8"))
@@ -90,6 +91,8 @@ def sync_once() -> None:
             api.add_monitor(**payload)
 
     api.disconnect()
+    READY_PATH.parent.mkdir(parents=True, exist_ok=True)
+    READY_PATH.write_text("ready\n", encoding="utf-8")
 
 
 def main() -> int:

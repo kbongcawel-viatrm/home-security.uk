@@ -1,24 +1,34 @@
 {
     admin off
 
-    # Send all access logs to a single JSON file for Crowdsec
     log default {
         output file /var/log/caddy/access.log
         format json
     }
-
-    # CrowdSec Bouncer configuration
-    crowdsec {
-        api_url http://crowdsec:8080/
-        api_key {env.CADDY_CROWDSEC_API_KEY}
-    }
 }
 
-:80 {
+# MVP analyst-facing routes for simplified.compose.yml. Caddy's local
+# internal CA is used for HTTPS.
+http://caddy.home-security.local {
     respond /healthz 200
 }
 
-wazuh.hq-sec.local {
+https://caddy.home-security.local {
+    tls internal
+    respond /healthz 200
+}
+
+https://uptimekuma.home-security.local {
+    tls internal
+    reverse_proxy http://uptime-kuma:3001
+}
+
+https://graylog.home-security.local {
+    tls internal
+    reverse_proxy http://graylog:9000
+}
+
+https://wazuh.home-security.local {
     tls internal
     reverse_proxy https://wazuh-dashboard:5601 {
         transport http {
@@ -27,7 +37,7 @@ wazuh.hq-sec.local {
     }
 }
 
-wazuh-api.hq-sec.local {
+https://wazuh-api.home-security.local {
     tls internal
     reverse_proxy https://wazuh-manager:55000 {
         transport http {
@@ -36,7 +46,7 @@ wazuh-api.hq-sec.local {
     }
 }
 
-wazuh-indexer.hq-sec.local {
+https://wazuh-indexer.home-security.local {
     tls internal
     reverse_proxy https://wazuh-indexer:9200 {
         transport http {
@@ -45,56 +55,17 @@ wazuh-indexer.hq-sec.local {
     }
 }
 
-graylog.hq-sec.local {
+https://graylog-datanode.home-security.local {
     tls internal
-    reverse_proxy http://graylog:9000
-}
-
-thehive.hq-sec.local {
-    tls internal
-    reverse_proxy http://thehive:9000
-}
-
-shuffle.hq-sec.local {
-    tls internal
-    reverse_proxy http://shuffle-frontend:80
-}
-
-shuffle-api.hq-sec.local {
-    tls internal
-    reverse_proxy http://shuffle-backend:5001
-}
-
-velociraptor.hq-sec.local {
-    tls internal
-    reverse_proxy http://velociraptor:8889
-}
-
-greenbone.hq-sec.local {
-    tls internal
-    reverse_proxy https://greenbone-nginx:443 {
+    reverse_proxy https://graylog-datanode:9200 {
         transport http {
             tls_insecure_skip_verify
         }
     }
 }
 
-vault.hq-sec.local {
+https://reports.home-security.local {
     tls internal
-    reverse_proxy http://vault:8200
-}
-
-reports.hq-sec.local {
-    tls internal
-    reverse_proxy http://caddy:80
-}
-
-uptime.hq-sec.local {
-    tls internal
-    reverse_proxy http://uptime-kuma:3001
-}
-
-ghost.hq-sec.local {
-    tls internal
-    reverse_proxy http://ghost:11434
+    root * /usr/share/caddy
+    file_server
 }
