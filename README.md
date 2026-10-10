@@ -29,6 +29,17 @@ CONTAINER_ENGINE=podman sh scripts/start-stack.sh
 SECSTACK_PROFILES="dns secrets brain" CONTAINER_ENGINE=podman sh scripts/start-stack.sh
 ```
 
+The startup script also accepts an action and one profile directly. Starting a profile first removes its existing containers and project network, while retaining named volumes:
+
+```bash
+./scripts/start-stack.sh up brain
+./scripts/start-stack.sh up network
+./scripts/start-stack.sh ps brain
+./scripts/start-stack.sh down ir
+```
+
+Use `./scripts/start-stack.sh --help` to see the supported actions and profiles. `down` without a profile stops the whole Compose project.
+
 If the required images are already present locally, `PULL_IMAGES=false` skips the pull step. For Podman, install `podman` and a Compose provider such as `podman-compose`, then enable the user socket before starting services that manage other containers:
 
 ```bash
@@ -52,7 +63,7 @@ sh scripts/killswitch.sh
 
 The stop mode targets the Compose project labels used by Docker Compose and Podman Compose. It preserves containers and named volumes. Use `sh scripts/killswitch.sh down` to remove the project's containers and networks while preserving named volumes. If you set `COMPOSE_PROJECT_NAME` when starting the stack, set the same value when stopping it.
 
-The scripts use Docker Compose when Docker is installed, and fall back to Podman when Docker is unavailable. The same `CONTAINER_ENGINE` setting works with `scripts/killswitch.sh`. The startup script uses journald logging with Podman because Podman does not support Docker's GELF logging driver. Commands below use Docker syntax; replace `docker` with `podman` when operating a Podman stack.
+The startup script prefers Podman Compose when available, then falls back to Docker Compose. Set `CONTAINER_ENGINE` to choose explicitly. The same setting works with `scripts/killswitch.sh`. The startup script uses journald logging with Podman because Podman does not support Docker's GELF logging driver. Commands below use Docker syntax; replace `docker` with `podman` when operating a Podman stack.
 
 Some services that control other containers (including Portainer, Shuffle, and the container health exporter) connect to a Docker-compatible API socket at `/var/run/docker.sock` inside their containers. When started with Podman, the script mounts the rootless Podman socket (normally `/run/user/$(id -u)/podman/podman.sock`) at that path. Ensure the user Podman socket is active with `systemctl --user enable --now podman.socket`. Override its host path with `CONTAINER_SOCKET_PATH` if needed. Socket access grants substantial control over the host's containers. Podman also differs in host networking, device/capability handling, and rootless port binding; review those services and host requirements before enabling their profiles.
 

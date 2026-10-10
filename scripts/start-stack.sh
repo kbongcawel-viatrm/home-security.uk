@@ -10,16 +10,12 @@ WAIT_HEALTH="${WAIT_HEALTH:-true}"
 HEALTH_TIMEOUT_SECONDS="${HEALTH_TIMEOUT_SECONDS:-900}"
 USE_VAULT_ENV="${USE_VAULT_ENV:-true}"
 CONTAINER_ENGINE="${CONTAINER_ENGINE:-}"
+DEFAULT_PROFILES="${SECSTACK_PROFILES:-all}"
 PODMAN_COMPOSE_FILE=""
 
 log() {
   printf '%s %s\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "$*"
 }
-
-# allow container ports
-echo "whitelisting container ports."
-/usr/bin/sh allow-container-ports.sh || true
-echo "done whitelisting container ports."
 
 compose() {
   env_args=""
@@ -40,10 +36,10 @@ select_container_engine() {
       echo "${CONTAINER_ENGINE} compose is unavailable; install/configure its Compose provider" >&2
       exit 127
     fi
-  elif command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1; then
-    CONTAINER_ENGINE=docker
   elif command -v podman >/dev/null 2>&1 && podman compose version >/dev/null 2>&1; then
     CONTAINER_ENGINE=podman
+  elif command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1; then
+    CONTAINER_ENGINE=docker
   else
     echo "Missing container engine: install Docker Compose or Podman with a Compose provider" >&2
     exit 127
@@ -209,15 +205,66 @@ wait_for_health() {
   done
 }
 
-main() {
+usage() {
+  cat <<'EOF'
+Usage:
+  sh scripts/start-stack.sh [up] [PROFILE]
+  sh scripts/start-stack.sh config [PROFILE]
+  sh scripts/start-stack.sh down [PROFILE]
+  sh scripts/start-stack.sh ps [PROFILE]
+  sh scripts/start-stack.sh logs PROFILE
+  sh scripts/start-stack.sh pull PROFILE
+  sh scripts/start-stack.sh build PROFILE
+
+Profiles:
+  brain network ir vuln all dns secrets ghost llm ops dashboard monitor logs
+  backup scanner shield
+
+Examples:
+  sh scripts/start-stack.sh up brain
+  sh scripts/start-stack.sh up network
+  sh scripts/start-stack.sh up all
+  sh scripts/start-stack.sh ps brain
+  sh scripts/start-stack.sh down ir
+EOF
+}
+
+valid_profile() {
+  case "$1" in
+    brain|network|ir|vuln|all|dns|secrets|ghost|llm|ops|dashboard|monitor|logs|backup|scanner|shield) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+validate_profiles() {
+  for profile in ${PROFILES}; do
+    if ! valid_profile "${profile}"; then
+      echo "Invalid profile: ${profile}" >&2
+      usage >&2
+      exit 2
+    fi
+  done
+}
+
+clear_existing_configuration() {
+  log "removing existing containers for selected profile(s): ${PROFILES}"
+  compose $(profile_args) down --remove-orphans
+}
+
+prepare_compose() {
   select_container_engine
   prepare_workspace
   prepare_podman_compose
+}
+
+start_stack() {
   render_vault_env
   apply_sysctl
 
   log "validating compose profiles: ${PROFILES}"
   compose $(profile_args) config >/dev/null
+
+  clear_existing_configuration
 
   if [ "${PULL_IMAGES}" = "true" ]; then
     pull_missing_images
@@ -228,6 +275,62 @@ main() {
   compose $(profile_args) ps
   wait_for_health
   log "startup complete"
+}
+
+main() {
+  action="${1:-up}"
+  profile="${2:-}"
+
+  case "${action}" in
+    config)
+      if [ -n "${profile}" ]; then
+        PROFILES="${profile}"
+        validate_profiles
+      else
+        PROFILES=""
+      fi
+      prepare_compose
+      if [ -n "${PROFILES}" ]; then
+        compose $(profile_args) config
+      else
+        compose config
+      fi
+      ;;
+    up|down|ps|logs|pull|build)
+      if [ "${action}" = "down" ] && [ -z "${profile}" ]; then
+        prepare_compose
+        compose down
+        return 0
+      fi
+      if [ -n "${profile}" ]; then
+        PROFILES="${profile}"
+      elif [ "${action}" = "up" ]; then
+        PROFILES="${DEFAULT_PROFILES}"
+      else
+        echo "A valid profile is required for '${action}'." >&2
+        usage >&2
+        exit 2
+      fi
+      validate_profiles
+      prepare_compose
+      case "${action}" in
+        up) start_stack ;;
+        down) compose $(profile_args) down ;;
+        ps) compose $(profile_args) ps ;;
+        logs) compose $(profile_args) logs -f ;;
+        pull) compose $(profile_args) pull ;;
+        build) compose $(profile_args) build ;;
+      esac
+      ;;
+    -h|--help|help)
+      usage
+      ;;
+    *)
+      echo "Unknown action: ${action}" >&2
+      usage >&2
+      exit 2
+      ;;
+  esac
 }
 
 main "$@"
