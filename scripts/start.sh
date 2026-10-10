@@ -462,11 +462,16 @@ compose --profile mvp up --detach coredns caddy wazuh-indexer mongodb uptime-kum
 initialize_indexer_security
 wait_for_containers "base services" "secdns caddy wazuh-indexer graylog-mongo uptime-kuma"
 
+# Wazuh manager can be checked independently, but Graylog must start while the
+# Data Node is still in first-run preflight. Waiting for both services here
+# would deadlock the Graylog/Data Node certificate bootstrap.
 compose --profile mvp up --detach wazuh-manager graylog-datanode
-wait_for_containers "indexer/database services" "wazuh-manager graylog-datanode"
+wait_for_containers "Wazuh manager" "wazuh-manager"
 
 compose --profile mvp up --detach wazuh-dashboard graylog
-wait_for_containers "dashboard/logging services" "wazuh-dashboard graylog"
+wait_for_containers "Graylog/Data Node services" "graylog-datanode graylog"
+
+wait_for_containers "Wazuh dashboard" "wazuh-dashboard"
 
 compose --profile mvp up --detach fluent-bit uptime-kuma-sync
 

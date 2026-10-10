@@ -57,7 +57,11 @@ https://wazuh-indexer.home-security.local {
 
 https://graylog-datanode.home-security.local {
     tls internal
-    reverse_proxy http://graylog-datanode:9200
+    reverse_proxy https://graylog-datanode:9200 {
+        transport http {
+            tls_insecure_skip_verify
+        }
+    }
 }
 
 https://reports.home-security.local {

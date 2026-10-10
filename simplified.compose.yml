@@ -87,6 +87,8 @@ services:
     profiles: ["mvp"]
     environment:
       INDEXER_URL: https://wazuh-indexer:9200
+      INDEXER_USERNAME: "${WAZUH_INDEXER_USERNAME:-admin}"
+      INDEXER_PASSWORD: "${WAZUH_INDEXER_PASSWORD:-admin}"
       FILEBEAT_SSL_VERIFICATION_MODE: "${WAZUH_FILEBEAT_SSL_VERIFICATION_MODE:-none}"
     ports:
       - "${STACK_BIND_IP:-127.0.0.1}:${WAZUH_EVENTS_PORT:-1514}:1514/udp"
@@ -104,7 +106,9 @@ services:
       wazuh-indexer:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "curl -kfsS https://localhost:55000 >/dev/null || exit 1"]
+      # The API intentionally returns 401 without a token. That proves the
+      # HTTPS listener is available, so do not use curl -f here.
+      test: ["CMD-SHELL", "status=$$(curl -ksS -o /dev/null -w '%{http_code}' https://localhost:55000 || true); case \"$${status}\" in 2*|3*|401) exit 0 ;; *) exit 1 ;; esac"]
       interval: 30s
       timeout: 10s
       retries: 20
@@ -117,6 +121,8 @@ services:
     environment:
       INDEXER_URL: https://wazuh-indexer:9200
       WAZUH_API_URL: https://wazuh-manager
+      INDEXER_USERNAME: "${WAZUH_INDEXER_USERNAME:-admin}"
+      INDEXER_PASSWORD: "${WAZUH_INDEXER_PASSWORD:-admin}"
       DASHBOARD_USERNAME: "${WAZUH_DASHBOARD_USERNAME}"
       DASHBOARD_PASSWORD: "${WAZUH_DASHBOARD_PASSWORD}"
     ports:
@@ -174,7 +180,10 @@ services:
       mongodb:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://localhost:9200 >/dev/null || exit 1"]
+      # The Data Node image does not include curl. OpenSearch port 9200 is
+      # intentionally closed until Graylog completes first-run preflight and
+      # provisions its security certificates.
+      test: ["CMD-SHELL", "bash -c '</dev/tcp/127.0.0.1/9200' >/dev/null 2>&1"]
       interval: 30s
       timeout: 10s
       retries: 20
@@ -192,13 +201,16 @@ services:
       GRAYLOG_HTTP_BIND_ADDRESS: 0.0.0.0:9000
       GRAYLOG_HTTP_EXTERNAL_URI: "${GRAYLOG_HTTP_EXTERNAL_URI:-http://localhost:9000/}"
       GRAYLOG_MONGODB_URI: mongodb://mongodb:27017/graylog
-      GRAYLOG_ELASTICSEARCH_HOSTS: http://graylog-datanode:9200
+      # Leave the search backend unset during first-run so Graylog can expose
+      # its preflight UI and provision the Data Node security certificates.
     entrypoint: ["/usr/bin/tini", "--", "/docker-entrypoint.sh"]
     depends_on:
       mongodb:
         condition: service_healthy
       graylog-datanode:
-        condition: service_healthy
+        # Graylog must start while Data Node is still in first-run preflight;
+        # waiting for Data Node health here creates a bootstrap deadlock.
+        condition: service_started
     ports:
       - "${STACK_BIND_IP:-127.0.0.1}:${GRAYLOG_HTTP_PORT:-9000}:9000"
       - "${STACK_BIND_IP:-127.0.0.1}:${GRAYLOG_GELF_UDP_PORT:-12201}:12201/udp"
