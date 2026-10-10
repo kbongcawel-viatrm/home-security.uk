@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Command to use:
+# bash scripts/prune-redundant-resources.sh --apply --force  
+# bash scripts/prune-redundant-resources.sh --apply --force --volumes    ## INCLUDING VOLUME
 set -Eeuo pipefail
 
 # Safely prune resources associated with image IDs previously flagged as duplicates.
