@@ -247,12 +247,13 @@ podman-compose -f simplified.compose.yml --profile mvp config
 **Estimate:** 1 day  
 **Dependencies:** S07
 
-- [ ] Mount `The Hands/FQDN proxy - Caddy/Caddyfile` at `/etc/caddy/Caddyfile`.
-- [ ] Publish the configured HTTP and HTTPS host ports.
-- [ ] Assign `${FQDN_PROXY_IPV4}` to Caddy on `secnet`.
-- [ ] Mount `caddy-logs` at `/var/log/caddy`.
-- [ ] Add a `fqdn-proxy` network alias or rename every reference to `caddy`.
-- [ ] Confirm Caddy routes to Graylog and Wazuh.
+- ~~[x] Mount `The Hands/FQDN proxy - Caddy/Caddyfile` at `/etc/caddy/Caddyfile`.~~
+- ~~[x] Publish the configured HTTP and HTTPS host ports.~~
+- ~~[x] Assign `${FQDN_PROXY_IPV4}` to Caddy on `secnet`.~~
+- ~~[x] Mount `caddy-logs` at `/var/log/caddy`.~~
+- ~~[x] Add a `fqdn-proxy` network alias or rename every reference to `caddy`.~~
+- [ ] Confirm Caddy routes to Graylog.
+- ~~[x] Confirm Caddy routes to Wazuh Dashboard (verified at `https://wazuh.home-security.local:8443/app/login`).~~
 
 **Commands:**
 
@@ -296,7 +297,8 @@ sh scripts/start.sh
 **Dependencies:** F02
 
 - [ ] Replace process-only checks with endpoint/readiness checks.
-- [ ] Add checks for CoreDNS, Caddy, Graylog API, Wazuh API/indexer, and Uptime Kuma.
+- [ ] Add checks for CoreDNS, Caddy, Graylog API, and Uptime Kuma.
+- ~~[x] Add checks for Wazuh API/indexer and Dashboard login readiness.~~
 - [ ] Use `service_healthy` dependencies where appropriate.
 - [ ] Define startup timeout and restart expectations.
 

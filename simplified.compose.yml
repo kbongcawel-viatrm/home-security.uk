@@ -121,12 +121,14 @@ services:
     environment:
       INDEXER_URL: https://wazuh-indexer:9200
       WAZUH_API_URL: https://wazuh-manager
-      INDEXER_USERNAME: "${WAZUH_INDEXER_USERNAME:-admin}"
-      INDEXER_PASSWORD: "${WAZUH_INDEXER_PASSWORD:-admin}"
-      DASHBOARD_USERNAME: "${WAZUH_DASHBOARD_USERNAME}"
-      DASHBOARD_PASSWORD: "${WAZUH_DASHBOARD_PASSWORD}"
+      # These credentials are for the dashboard's internal OpenSearch service
+      # account, not the browser login. The current lab indexer uses defaults.
+      DASHBOARD_USERNAME: "${WAZUH_DASHBOARD_SERVICE_USERNAME:-kibanaserver}"
+      DASHBOARD_PASSWORD: "${WAZUH_DASHBOARD_SERVICE_PASSWORD:-kibanaserver}"
     ports:
       - "${STACK_BIND_IP:-127.0.0.1}:${WAZUH_DASHBOARD_PORT:-5601}:5601"
+    volumes:
+      - "./The Brain/Wazuh/dashboard/opensearch_dashboards.yml:/usr/share/wazuh-dashboard/config/opensearch_dashboards.yml:ro,z"
     networks: [secnet]
     depends_on:
       wazuh-indexer:
@@ -134,7 +136,9 @@ services:
       wazuh-manager:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "curl -kfsS https://localhost:5601/status >/dev/null || exit 1"]
+      # /status requires an authenticated session and returns 401 when the
+      # dashboard is healthy. The root route redirects to the login page.
+      test: ["CMD-SHELL", "curl -kfsS https://localhost:5601/ >/dev/null || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 20
