@@ -16,6 +16,11 @@ log() {
   printf '%s %s\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "$*"
 }
 
+# allow container ports
+echo "whitelisting container ports."
+/usr/bin/sh allow-container-ports.sh || true
+echo "done whitelisting container ports."
+
 compose() {
   env_args=""
   if [ -f ".env" ]; then
@@ -54,6 +59,12 @@ profile_args() {
 }
 
 pull_missing_images() {
+  if [ "${CONTAINER_ENGINE}" = "podman" ]; then
+    log "asking Podman Compose to pull images for selected profiles"
+    compose $(profile_args) pull
+    return 0
+  fi
+
   require_command python3
 
   missing_services="$(compose $(profile_args) config --format json | python3 -c '
