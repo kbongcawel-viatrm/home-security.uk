@@ -14,7 +14,7 @@ VALIDATE_ONLY="${VALIDATE_ONLY:-false}"
 REFRESH_IMAGES="${REFRESH_IMAGES:-false}"
 PULL_IMAGES="${PULL_IMAGES:-true}"
 IMAGE_PULL_TIMEOUT_SECONDS="${IMAGE_PULL_TIMEOUT_SECONDS:-180}"
-PUBLISH_IMAGES="${PUBLISH_IMAGES:-false}"
+PUBLISH_IMAGES="${PUBLISH_IMAGES:-true}"
 FIREWALL_ZONE="${FIREWALL_ZONE:-}"
 log() { printf '%s %s\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "$*"; }
 fail() { printf 'ERROR: %s\n' "$*" >&2; exit 1; }
