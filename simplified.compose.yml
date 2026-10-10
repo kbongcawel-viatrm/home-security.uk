@@ -8,6 +8,8 @@ services:
     image: demo.goharbor.io/home-security-uk-registry/secdns:${HARBOR_IMAGE_TAG:-v1.1}
     container_name: secdns
     profiles: ["mvp"]
+    cpus: 0.25
+    mem_limit: 512m
     command: ["-conf", "/etc/coredns/Corefile"]
     ports:
       - "${SECDNS_HOST_IP:-127.0.0.1}:${SECDNS_PORT:-1053}:53/udp"
@@ -30,6 +32,8 @@ services:
     image: demo.goharbor.io/home-security-uk-registry/caddy:${HARBOR_IMAGE_TAG:-v1.1}
     container_name: caddy
     profiles: ["mvp"]
+    cpus: 0.25
+    mem_limit: 512m
     ports:
       - "${FQDN_HTTP_HOST_IP:-127.0.0.1}:${FQDN_HTTP_PORT:-8081}:80"
       - "${FQDN_HTTPS_HOST_IP:-127.0.0.1}:${FQDN_HTTPS_PORT:-8443}:443"
@@ -85,6 +89,8 @@ services:
     container_name: wazuh-manager
     hostname: wazuh-manager
     profiles: ["mvp"]
+    cpus: 0.25
+    mem_limit: 512m
     environment:
       INDEXER_URL: https://wazuh-indexer:9200
       INDEXER_USERNAME: "${WAZUH_INDEXER_USERNAME:-admin}"
@@ -118,6 +124,8 @@ services:
     image: demo.goharbor.io/home-security-uk-registry/wazuh-dashboard:${HARBOR_IMAGE_TAG:-v1.1}
     container_name: wazuh-dashboard
     profiles: ["mvp"]
+    cpus: 0.25
+    mem_limit: 512m
     environment:
       INDEXER_URL: https://wazuh-indexer:9200
       WAZUH_API_URL: https://wazuh-manager
@@ -150,6 +158,8 @@ services:
     image: demo.goharbor.io/home-security-uk-registry/graylog-mongo:${HARBOR_IMAGE_TAG:-v1.1}
     container_name: graylog-mongo
     profiles: ["mvp"]
+    cpus: 0.25
+    mem_limit: 512m
     volumes:
       - graylog-mongo-data:/data/db
     networks: [secnet]
@@ -198,6 +208,8 @@ services:
     container_name: graylog
     hostname: graylog
     profiles: ["mvp"]
+    cpus: 0.25
+    mem_limit: 512m
     environment:
       GRAYLOG_NODE_ID_FILE: /usr/share/graylog/data/config/node-id
       GRAYLOG_PASSWORD_SECRET: "${GRAYLOG_PASSWORD_SECRET}"
@@ -236,6 +248,8 @@ services:
     image: demo.goharbor.io/home-security-uk-registry/log-forwarder:${HARBOR_IMAGE_TAG:-v1.1}
     container_name: fluent-bit
     profiles: ["mvp"]
+    cpus: 0.25
+    mem_limit: 512m
     volumes:
       - "./The Eyes/Fluent Bit/fluent-bit.conf:/fluent-bit/etc/fluent-bit.conf:ro"
       - "./The Eyes/Fluent Bit/parsers.conf:/fluent-bit/etc/parsers.conf:ro"
@@ -251,6 +265,8 @@ services:
     image: demo.goharbor.io/home-security-uk-registry/uptime-kuma:${HARBOR_IMAGE_TAG:-v1.1}
     container_name: uptime-kuma
     profiles: ["mvp"]
+    cpus: 0.25
+    mem_limit: 512m
     volumes:
       - uptime-kuma-data:/app/data
     networks: [secnet]
@@ -268,6 +284,8 @@ services:
     image: demo.goharbor.io/home-security-uk-registry/uptime-kuma-sync:${HARBOR_IMAGE_TAG:-v1.1}
     container_name: uptime-kuma-sync
     profiles: ["mvp"]
+    cpus: 0.25
+    mem_limit: 512m
     environment:
       PYTHONUNBUFFERED: "1"
       UPTIME_KUMA_URL: "${UPTIME_KUMA_URL:-http://uptime-kuma:3001}"
