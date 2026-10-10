@@ -12,6 +12,7 @@ PROJECT_NAME="${COMPOSE_PROJECT_NAME:-}"
 CONTAINER_ENGINE="${CONTAINER_ENGINE:-}"
 APPLY=false
 REMOVE_VOLUMES=false
+FORCE=false
 
 # Image IDs from the supplied `podman images` listing where different service/repository
 # names unexpectedly resolved to the same image ID. Same-repository latest/v1.1 aliases
@@ -28,12 +29,14 @@ log() { printf '[%s] %s\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "$*"; }
 die() { log "ERROR: $*" >&2; exit 1; }
 usage() {
   cat <<'USAGE'
-Usage: scripts/prune-redundant-resources.sh [--dry-run | --apply] [--volumes] [--project NAME]
+Usage: scripts/prune-redundant-resources.sh [--dry-run | --apply] [--force] [--volumes] [--project NAME]
 
 Options:
   --dry-run       Show what would be removed (default).
   --apply         Remove containers using flagged image IDs, then remove those images
                   and unused networks labeled for this Compose project.
+  --force         With --apply, force-remove flagged images even if containers reference them.
+                  This may disrupt containers outside this Compose project.
   --volumes       With --apply, also remove every named volume labeled for this project.
                   WARNING: this permanently deletes persisted application data.
   --project NAME  Override the Compose project name.
@@ -48,6 +51,7 @@ while (($#)); do
     --dry-run) APPLY=false ;;
     --apply) APPLY=true ;;
     --volumes) REMOVE_VOLUMES=true ;;
+    --force) FORCE=true ;;
     --project) (($# >= 2)) || die "--project requires a name"; PROJECT_NAME="$2"; shift ;;
     -h|--help) usage; exit 0 ;;
     *) die "Unknown option: $1 (use --help)" ;;
@@ -90,7 +94,7 @@ unique_lines() { awk 'NF && !seen[$0]++'; }
 
 select_engine
 resolve_project_name
-log "engine=$CONTAINER_ENGINE project=$PROJECT_NAME mode=$([[ "$APPLY" == true ]] && echo apply || echo dry-run)"
+log "engine=$CONTAINER_ENGINE project=$PROJECT_NAME mode=$([[ "$APPLY" == true ]] && echo apply || echo dry-run) force=$FORCE"
 if [[ "$REMOVE_VOLUMES" == true && "$APPLY" != true ]]; then
   log "NOTE: --volumes has no effect during dry-run except listing candidate volumes."
 fi
@@ -159,12 +163,20 @@ fi
 for image_id in "${FLAGGED_IMAGE_IDS[@]}"; do
   if "$CONTAINER_ENGINE" image inspect "$image_id" >/dev/null 2>&1; then
     remaining="$("$CONTAINER_ENGINE" ps -aq --filter "ancestor=$image_id" 2>/dev/null || true)"
-    if [[ -n "$remaining" ]]; then
-      log "Keeping image $image_id because containers still reference it outside this project."
+    if [[ -n "$remaining" && "$FORCE" != true ]]; then
+      log "Keeping image $image_id because containers still reference it. Re-run with --apply --force to override this safety check."
       continue
     fi
-    log "Removing flagged image ID $image_id (all tags pointing to it may be removed)."
-    if ! "$CONTAINER_ENGINE" rmi "$image_id"; then
+    if [[ -n "$remaining" && "$FORCE" == true ]]; then
+      log "FORCE enabled: attempting to remove image $image_id despite container references."
+    else
+      log "Removing flagged image ID $image_id (all tags pointing to it may be removed)."
+    fi
+    if [[ "$FORCE" == true ]]; then
+      if ! "$CONTAINER_ENGINE" rmi --force "$image_id"; then
+        log "WARNING: could not force-remove image $image_id."
+      fi
+    elif ! "$CONTAINER_ENGINE" rmi "$image_id"; then
       log "WARNING: could not remove image $image_id; it may be shared, in use, or protected."
     fi
   fi
