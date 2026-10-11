@@ -3,12 +3,12 @@ name: Deploy Minimal AI Security Lab
 on:
   workflow_dispatch:
   push:
-    branches:
-      - v2.0
+    branches: [v2.0]
     paths:
       - "deploy/minimal-ai-security-lab/**"
       - "suricata/**"
       - "scripts/install-suricata-home-security.sh"
+      - ".github/workflows/deploy-minimal-ai-security-lab.yml"
 
 permissions:
   contents: read
@@ -19,8 +19,6 @@ concurrency:
 
 jobs:
   deploy:
-    # Register the Fedora host as a self-hosted Linux x64 runner.
-    # Do not add untrusted repositories/branches to this runner.
     if: github.ref == 'refs/heads/v2.0'
     runs-on: [self-hosted, linux, x64]
     timeout-minutes: 45
@@ -28,15 +26,13 @@ jobs:
       run:
         shell: bash
         working-directory: deploy/minimal-ai-security-lab
-
     steps:
       - name: Checkout v2.0
         uses: actions/checkout@v4
         with:
           ref: v2.0
           clean: true
-
-      - name: Check host runtime and deployment environment
+      - name: Check runtime prerequisites
         run: |
           set -euo pipefail
           command -v podman
@@ -44,72 +40,58 @@ jobs:
           command -v curl
           podman info >/dev/null
           test -r /etc/home-security-lab/minimal-ai-security-lab.env
-          test -r /etc/suricata/suricata.yaml
-          test -x /usr/bin/suricata || command -v suricata
-          echo "Rootless Podman and host Suricata configuration found."
-
-      - name: Prepare environment file
-        run: |
-          set -euo pipefail
-          install -m 600 /etc/home-security-lab/minimal-ai-security-lab.env .env
-          echo ".env copied from the host-managed secret file; it is not committed."
-
-      - name: Validate Compose configuration
-        run: |
-          set -euo pipefail
-          # Do not print rendered config: it contains credentials.
-          podman-compose -f compose.yaml config >/dev/null
-
-      - name: Pull application images to the Fedora runner
-        run: |
-          set -euo pipefail
-          get_env() {
-            local key="$1" default="$2" value
-            value="$(sed -n "s/^\${key}=//p" .env | tail -n 1)"
-            printf '%s' "${value:-$default}"
-          }
-
-          podman pull "wazuh/wazuh-manager:$(get_env WAZUH_VERSION 4.14.8)"
-          podman pull "public.ecr.aws/zinclabs/openobserve:$(get_env OPENOBSERVE_TAG latest)"
-          podman pull "ollama/ollama:$(get_env OLLAMA_TAG latest)"
-          podman pull "cr.fluentbit.io/fluent/fluent-bit:$(get_env FLUENT_BIT_TAG 3.2)"
-
-      - name: Install and validate native Suricata config and rules
+      - name: Ensure Suricata is installed with live application
         working-directory: .
         run: |
           set -euo pipefail
-          sudo -n bash scripts/install-suricata-home-security.sh
-
-      - name: Build local AI worker image
+          if ! rpm -q suricata >/dev/null 2>&1; then
+            echo "Suricata is not installed; attempting rpm-ostree live application."
+            if ! sudo -n rpm-ostree install --apply-live suricata; then
+              echo "ERROR: Live installation failed or is unsupported. No reboot attempted; install Suricata in a maintenance window and rerun." >&2
+              exit 1
+            fi
+          fi
+          rpm -q suricata >/dev/null
+          command -v suricata >/dev/null
+          systemctl cat suricata.service >/dev/null
+      - name: Load host-managed environment
+        run: install -m 600 /etc/home-security-lab/minimal-ai-security-lab.env .env
+      - name: Validate Compose configuration
+        run: podman-compose -f compose.yaml config >/dev/null
+      - name: Pull container images
         run: |
           set -euo pipefail
-          podman-compose -f compose.yaml build security-ai
-
+          env_value() {
+            local key="$1" fallback="$2" value
+            value="$(sed -n "s/^\${key}=//p" .env | tail -n 1)"
+            printf '%s' "${value:-$fallback}"
+          }
+          podman pull "wazuh/wazuh-manager:$(env_value WAZUH_VERSION 4.14.8)"
+          podman pull "public.ecr.aws/zinclabs/openobserve:$(env_value OPENOBSERVE_TAG latest)"
+          podman pull "ollama/ollama:$(env_value OLLAMA_TAG latest)"
+          podman pull "cr.fluentbit.io/fluent/fluent-bit:$(env_value FLUENT_BIT_TAG 3.2)"
+      - name: Build local AI worker
+        run: podman-compose -f compose.yaml build security-ai
+      - name: Install, validate, enable, and start host Suricata
+        working-directory: .
+        run: sudo -n bash deploy/minimal-ai-security-lab/scripts/install-suricata-home-security.sh
       - name: Deploy containers
-        run: |
-          set -euo pipefail
-          podman-compose -f compose.yaml up -d --build
-
-      - name: Pull configured Ollama model
+        run: podman-compose -f compose.yaml up -d --build
+      - name: Pull Ollama model
         run: |
           set -euo pipefail
           model="$(sed -n 's/^OLLAMA_MODEL=//p' .env | tail -n 1)"
-          model="${model:-qwen2.5:3b}"
-          podman exec ollama ollama pull "$model"
-
+          podman exec ollama ollama pull "${model:-qwen2.5:3b}"
       - name: Verify deployment
         run: |
           set -euo pipefail
           podman-compose -f compose.yaml ps
-          podman ps --format 'table {{.Names}}\t{{.Status}}'
           systemctl is-active --quiet suricata
           sudo -n suricata -T -c /etc/suricata/suricata.yaml
-          test -r "$(sed -n 's/^SURICATA_LOG_DIR=//p' .env | tail -n 1 | sed 's#/$##')/eve.json" ||             test -r /var/log/suricata/eve.json
-          curl --fail --silent --show-error http://127.0.0.1:5080/healthz >/dev/null ||             echo "OpenObserve health endpoint did not return success; inspect its container logs."
+          test -r /var/log/suricata/eve.json
           podman logs --tail 30 fluent-bit
           podman logs --tail 30 security-ai
-
-      - name: Remove workspace environment file
+          curl --fail --silent --show-error http://127.0.0.1:5080/healthz >/dev/null || echo "OpenObserve health check did not pass; inspect logs."
+      - name: Remove temporary environment file
         if: always()
-        run: |
-          rm -f .env
+        run: rm -f .env
