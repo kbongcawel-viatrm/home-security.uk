@@ -1,4 +1,4 @@
-name: Deploy Minimal AI Security Lab
+name: Deploy v2.home-security.uk
 
 on:
   workflow_dispatch:
