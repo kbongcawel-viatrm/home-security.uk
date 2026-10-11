@@ -1,5 +1,6 @@
 name: Test deploy on Ubuntu
 
+workflow_dispatch:
 on:
   push:
     branches:
