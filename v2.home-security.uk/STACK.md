@@ -34,11 +34,11 @@ The AI worker is advisory only. It does not modify active Wazuh or Suricata conf
 
 - Run from a directory containing `compose.yaml`, `.env`, `fluent-bit/fluent-bit.conf`, and `security-ai/`.
 - The existing Wazuh agent version should be compatible with the manager version. The sample pins the manager to `4.14.8`; change `WAZUH_VERSION` to match your tested deployment if needed.
-- Suricata is installed and managed natively on the Fedora host, not by this Compose project.
+- Suricata is installed and managed natively on the Fedora host as `suricata.service`, not by this Compose project. The CI workflow does not install or check it; follow [Install native Suricata on Fedora Secureblue](#install-native-suricata-on-fedora-secureblue) on the host.
 - Fluent Bit and the AI worker bind-mount `${SURICATA_LOG_DIR:-/var/log/suricata}` read-only. Verify that containers can read `eve.json` while SELinux remains enforcing. Do not blindly relabel the host log directory with `:Z`/`:z`, because that can interfere with host-service SELinux access. If access is denied, inspect `ausearch -m AVC -ts recent` and apply a narrow, tested SELinux solution rather than disabling SELinux globally.
 - OpenObserve is bound to localhost by default. Access it through a local browser at `http://127.0.0.1:5080`. Do not expose it directly to the Internet.
 - Ollama's API is not published on the host. Only containers on the private Compose network can access it.
-- Replace the sample OpenObserve password in `.env` before first start. OpenObserve initializes root credentials on first start; changing environment variables later may not change an existing account password.
+- Set a unique OpenObserve password in the host env file `/etc/v2.home-security.uk/minimal-ai-security-lab.env` before first start. OpenObserve initializes root credentials on first start; changing environment variables later may not change an existing account password.
 - The worker only processes new records after its saved file offsets. Initial historical logs are not backfilled into AI analysis.
 - The worker stores offsets in `security_ai_state`. Fluent Bit stores independent tail offsets in `fluent_bit_state`.
 - Wazuh Manager is run without its official indexer/dashboard in this simplified stack. This design uses OpenObserve for the separate log dashboard; it does not provide the full native Wazuh dashboard experience or indexed Wazuh alert search inside Wazuh itself.
@@ -46,45 +46,62 @@ The AI worker is advisory only. It does not modify active Wazuh or Suricata conf
 
 ## Install native Suricata on Fedora Secureblue
 
-Check whether Suricata is already installed:
+This is the setup guide for the host-side Suricata sensor. Suricata runs as the host's `suricata.service`, so these steps run on the host, not inside Toolbox and not in CI. The host has no `sudo`; run privileged commands as root with `run0`.
 
-```bash
-rpm -q suricata
-```
+Run these steps from a normal user session on the host, from the repository directory:
 
-If it is not installed and the package is available in your configured repositories, layer it and reboot:
+1. Check whether Suricata is installed:
 
-```bash
-sudo rpm-ostree install suricata
-systemctl reboot
-```
+   ```bash
+   rpm -q suricata
+   ```
 
-After reboot, inspect the packaged unit and configuration:
+2. If it is not installed, apply it live. If live application is not supported, layer it and reboot in a maintenance window:
+
+   ```bash
+   run0 rpm-ostree install --apply-live suricata
+   # Fallback only if live application fails:
+   run0 rpm-ostree install suricata
+   run0 systemctl reboot
+   ```
+
+3. Confirm the capture interface and that the repository configuration uses it. The interface is set in `suricata/home-security.yaml`; do not assume the default service captures the intended interface.
+
+   ```bash
+   ip -brief link
+   ```
+
+4. Install, validate, enable, start, and verify the sensor with the host script. It runs `suricata -T`, installs the repository configuration, enables and starts `suricata.service`, and checks that `eve.json` contains valid JSON:
+
+   ```bash
+   run0 bash scripts/host-suricata-deploy.sh install
+   ```
+
+5. Check the sensor at any time:
+
+   ```bash
+   run0 bash scripts/host-suricata-deploy.sh verify
+   ```
+
+The script is [scripts/host-suricata-deploy.sh](scripts/host-suricata-deploy.sh). It never reboots the host. If it fails, it prints the recent `suricata.service` journal. Inspect the packaged unit and version with:
 
 ```bash
 rpm -ql suricata | grep -E 'systemd|suricata.yaml|rules'
 systemctl cat suricata
-sudo suricata --build-info
-ip -brief link
+run0 suricata --build-info
 ```
 
-Configure the service for the actual interface on your host (verify whether `enp1s0` exists). Validate before enabling:
-
-```bash
-sudo suricata -T -c /etc/suricata/suricata.yaml
-sudo systemctl enable --now suricata
-sudo systemctl status suricata
-sudo journalctl -u suricata -b --no-pager
-```
-
-The exact interface setting depends on the packaged unit and configuration. Do not assume the default service captures the intended interface. Verify that `/var/log/suricata/eve.json` is updating before relying on the sensor.
+Verify that `/var/log/suricata/eve.json` is updating before relying on the sensor.
 
 ## Install the Compose stack
 
+The host-managed environment file is `/etc/v2.home-security.uk/minimal-ai-security-lab.env`. It holds secrets, so it should be owned by your user with mode `600`. Do not copy it into the repository. Set a long, unique `OPENOBSERVE_PASSWORD` in that file before first start, then copy it into the project directory for a manual run:
+
 ```bash
-cp .env.example .env
-# Edit .env and set a long, unique OPENOBSERVE_PASSWORD.
+install -m 600 /etc/v2.home-security.uk/minimal-ai-security-lab.env .env
 ```
+
+The CI workflow does the same copy automatically and deletes `.env` when the job ends.
 
 Review the Compose file and confirm the host interface name:
 
@@ -120,8 +137,8 @@ podman logs --tail 100 wazuh-manager
 podman logs --tail 100 fluent-bit
 podman logs --tail 100 openobserve
 podman logs --tail 100 security-ai
-systemctl status suricata
-sudo tail -n 5 /var/log/suricata/eve.json
+run0 bash scripts/host-suricata-deploy.sh verify
+run0 tail -n 5 /var/log/suricata/eve.json
 ```
 
 Open `http://127.0.0.1:5080` and sign in with the credentials in `.env`.
@@ -135,8 +152,8 @@ Open `http://127.0.0.1:5080` and sign in with the credentials in `.env`.
    ```
 3. Confirm native Suricata is active and emitting EVE JSON:
    ```bash
-   systemctl status suricata
-   sudo tail -n 5 /var/log/suricata/eve.json
+   run0 bash scripts/host-suricata-deploy.sh verify
+   run0 tail -n 5 /var/log/suricata/eve.json
    ```
 4. Confirm Fluent Bit can read the host log file from its container:
    ```bash
@@ -147,7 +164,7 @@ Open `http://127.0.0.1:5080` and sign in with the credentials in `.env`.
 
 ## Operations and maintenance
 
-- Keep `.env` out of version control.
+- Keep `.env` out of version control, and keep the host env file in `/etc/v2.home-security.uk/` with mode `600`.
 - Pin image tags or digests after testing; avoid unattended production upgrades from `latest`.
 - Back up named volumes and test restores.
 - Monitor disk usage; log and model volumes can grow substantially.
