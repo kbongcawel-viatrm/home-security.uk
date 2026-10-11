@@ -1,10 +1,7 @@
 name: Test deploy on Ubuntu
 
-workflow_dispatch:
 on:
-  push:
-    branches:
-      - demo-run
+  workflow_dispatch:
     paths:
       - "v2.home-security.uk/**"
       - ".github/workflows/deploy-v2-stack.yml"
