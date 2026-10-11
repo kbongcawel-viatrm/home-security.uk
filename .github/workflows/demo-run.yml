@@ -36,8 +36,6 @@ jobs:
           command -v curl
           command -v python3
           command -v rpm
-          command -v rpm-ostree
-          command -v systemctl
           command -v sudo
           podman info >/dev/null
           test -r /etc/v2.home-security.uk/minimal-ai-security-lab.env
@@ -47,11 +45,12 @@ jobs:
           set -euo pipefail
           if ! rpm -q suricata >/dev/null 2>&1; then
             echo "Suricata is not installed; attempting rpm-ostree live application."
-            if ! sudo -n rpm-ostree install --apply-live suricata; then
+            if ! sudo apt install suricata -y; then
               echo "ERROR: Live installation failed or is unsupported. No reboot attempted; install Suricata in a maintenance window and rerun." >&2
               exit 1
             fi
           fi
+          systemctl enable --now suricata.service || true >/dev/null
           rpm -q suricata >/dev/null
           command -v suricata >/dev/null
           systemctl cat suricata.service >/dev/null
