@@ -1,4 +1,0 @@
-<decoder name="hqsec-powershell-fallback">
-  <prematch>hqsec_powershell_fallback: </prematch>
-  <plugin_decoder offset="after_prematch">JSON_Decoder</plugin_decoder>
-</decoder>

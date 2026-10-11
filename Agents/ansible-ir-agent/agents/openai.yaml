@@ -1,4 +1,0 @@
-interface:
-  display_name: "Ansible IR Agent"
-  short_description: "Operate response automation playbooks"
-  default_prompt: "Use $ansible-ir-agent to run incident response playbooks from the lab stack."

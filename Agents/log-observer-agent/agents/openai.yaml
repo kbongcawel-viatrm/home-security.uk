@@ -1,4 +1,0 @@
-interface:
-  display_name: "Log Observer Agent"
-  short_description: "Review logs and daily AI assessments"
-  default_prompt: "Use $log-observer-agent to review gathered logs, dashboard summaries, and Graylog routing health."

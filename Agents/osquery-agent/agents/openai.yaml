@@ -1,4 +1,0 @@
-interface:
-  display_name: "Osquery Agent"
-  short_description: "Operate SQL endpoint inspection checks"
-  default_prompt: "Use $osquery-agent to run osquery validation and endpoint inspection workflows."

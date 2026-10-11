@@ -1,4 +1,0 @@
-interface:
-  display_name: "Uptime Agent"
-  short_description: "Keep every stack service monitored in Uptime Kuma"
-  default_prompt: "Use $uptime-agent to update Uptime Kuma monitors whenever hq-sec-stack services, ports, FQDNs, or endpoints change."

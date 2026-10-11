@@ -1,4 +1,0 @@
-interface:
-  display_name: "Graylog Agent"
-  short_description: "Operate Graylog ingestion and search flows"
-  default_prompt: "Use $graylog-agent to operate Graylog ingestion, search, and log routing workflows."

@@ -1,4 +1,0 @@
-interface:
-  display_name: "Velociraptor Agent"
-  short_description: "Operate endpoint forensics and hunts"
-  default_prompt: "Use $velociraptor-agent to operate Velociraptor endpoint collection and hunting workflows."

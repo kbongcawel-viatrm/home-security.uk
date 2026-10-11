@@ -1,4 +1,0 @@
-interface:
-  display_name: "Shuffle Agent"
-  short_description: "Operate SOAR workflows and response hooks"
-  default_prompt: "Use $shuffle-agent to operate Shuffle automation and response workflow integrations."

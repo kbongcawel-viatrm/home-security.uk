@@ -1,2 +1,0 @@
-@echo off
-type D:\codex-workspace\ossec-server-transfer.tar | wsl --cd /opt -d CBL-Mariner -u root --exec /usr/bin/sh -c "rm -rf /opt/ossec-server.data.bak; if [ -d /opt/ossec-server/data ]; then mv /opt/ossec-server/data /opt/ossec-server.data.bak; fi; rm -rf /opt/ossec-server; mkdir -p /opt; tar -xf - -C /opt; if [ -d /opt/ossec-server.data.bak ]; then mv /opt/ossec-server.data.bak /opt/ossec-server/data; fi"

@@ -1,4 +1,0 @@
-interface:
-  display_name: "Backup Agent"
-  short_description: "Operate Docker volume backup and restore"
-  default_prompt: "Use $backup-agent to validate persistent data backups and plan safe restores for hq-sec-stack."

@@ -1,4 +1,0 @@
-interface:
-  display_name: "Wazuh Agent"
-  short_description: "Operate Wazuh endpoint detection services"
-  default_prompt: "Use $wazuh-agent to operate Wazuh manager, indexer, dashboard, and endpoint telemetry workflows."

@@ -1,4 +1,0 @@
----
-- import_playbook: windows-collect-artifacts.yml
-- import_playbook: windows-applocker-containment.yml
-- import_playbook: windows-isolate.yml

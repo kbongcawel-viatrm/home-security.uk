@@ -1,4 +1,0 @@
-interface:
-  display_name: "Ghost Agent"
-  short_description: "Run local LLM analysis and report generation"
-  default_prompt: "Use $ghost-agent to analyze hq-sec-stack evidence with the Ghost runtime, generate reports, plan safe hardening or response actions, and evaluate upgrade paths for operational stability before recommending image or patch changes."

@@ -1,8 +1,0 @@
-[windows_targets]
-# Add response targets here, for example:
-# endpoint-01 ansible_host=192.0.2.10 ansible_user=ir
-
-[windows_targets:vars]
-ansible_connection=winrm
-ansible_winrm_transport=ntlm
-ansible_winrm_server_cert_validation=ignore

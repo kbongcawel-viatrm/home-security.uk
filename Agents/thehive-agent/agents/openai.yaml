@@ -1,4 +1,0 @@
-interface:
-  display_name: "TheHive Agent"
-  short_description: "Operate case management and alert triage"
-  default_prompt: "Use $thehive-agent to operate TheHive alert triage and case management workflows."

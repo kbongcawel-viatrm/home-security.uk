@@ -1,9 +1,0 @@
-# MVP analyst-facing names resolve to Caddy's fixed secnet address.
-10.77.0.80 caddy.home-security.local
-10.77.0.80 uptimekuma.home-security.local
-10.77.0.80 graylog.home-security.local
-10.77.0.80 wazuh.home-security.local
-10.77.0.80 wazuh-api.home-security.local
-10.77.0.80 wazuh-indexer.home-security.local
-10.77.0.80 graylog-datanode.home-security.local
-10.77.0.80 reports.home-security.local

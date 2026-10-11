@@ -1,4 +1,0 @@
-interface:
-  display_name: "Vault Agent"
-  short_description: "Keep service secrets in Vault and rotated monthly"
-  default_prompt: "Use $vault-agent to review service secret needs, update Vault secret manifests, wire Vault-rendered variables, and maintain monthly rotation."

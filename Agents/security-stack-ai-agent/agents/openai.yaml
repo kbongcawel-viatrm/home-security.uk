@@ -1,4 +1,0 @@
-interface:
-  display_name: "Security Stack AI Agent"
-  short_description: "Operate and evolve the full SOC lab stack"
-  default_prompt: "Use $security-stack-ai-agent to analyze, validate, and safely modify the hq-sec-stack services."

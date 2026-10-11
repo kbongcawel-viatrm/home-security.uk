@@ -1,4 +1,0 @@
-interface:
-  display_name: "Network Sensor Agent"
-  short_description: "Operate Suricata and Zeek network sensors"
-  default_prompt: "Use $network-sensor-agent to operate Suricata and Zeek network telemetry workflows."

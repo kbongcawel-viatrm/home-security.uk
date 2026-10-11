@@ -1,4 +1,0 @@
-interface:
-  display_name: "Greenbone Agent"
-  short_description: "Operate vulnerability scanning workflows"
-  default_prompt: "Use $greenbone-agent to operate Greenbone vulnerability scanning workflows."
