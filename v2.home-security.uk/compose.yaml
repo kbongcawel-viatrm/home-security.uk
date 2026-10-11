@@ -1,4 +1,4 @@
-name: minimal-ai-security-lab
+name: v2.home-security.uk
 
 services:
   wazuh-manager:
