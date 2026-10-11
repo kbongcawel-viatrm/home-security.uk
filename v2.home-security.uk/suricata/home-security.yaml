@@ -1,0 +1,6 @@
+%YAML 1.1
+---
+# Home Security Lab address group overlay.
+# Edit HOME_NET to match your actual LAN/VLAN ranges.
+HOME_NET: "[10.1.29.0/24]"
+EXTERNAL_NET: "!$HOME_NET"

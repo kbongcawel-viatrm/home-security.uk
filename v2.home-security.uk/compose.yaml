@@ -1,0 +1,122 @@
+name: minimal-ai-security-lab
+
+services:
+  wazuh-manager:
+    image: wazuh/wazuh-manager:${WAZUH_VERSION:-4.14.8}
+    container_name: wazuh-manager
+    restart: unless-stopped
+    ports:
+      - "${WAZUH_AGENT_PORT:-1514}:1514/tcp"
+      - "${WAZUH_ENROLLMENT_PORT:-1515}:1515/tcp"
+      - "127.0.0.1:${WAZUH_API_PORT:-55000}:55000/tcp"
+    environment:
+      TZ: ${TZ:-Asia/Manila}
+    volumes:
+      - wazuh_api_configuration:/var/ossec/api/configuration
+      - wazuh_etc:/var/ossec/etc
+      - wazuh_logs:/var/ossec/logs
+      - wazuh_queue:/var/ossec/queue
+      - wazuh_var_multigroups:/var/ossec/var/multigroups
+      - wazuh_integrations:/var/ossec/integrations
+      - wazuh_active_response:/var/ossec/active-response
+      - wazuh_agentless:/var/ossec/agentless
+      - wazuh_wodles:/var/ossec/wodles
+    networks:
+      - security
+    stop_grace_period: 60s
+
+  openobserve:
+    image: public.ecr.aws/zinclabs/openobserve:${OPENOBSERVE_TAG:-latest}
+    container_name: openobserve
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${OPENOBSERVE_PORT:-5080}:5080/tcp"
+    environment:
+      ZO_ROOT_USER_EMAIL: ${OPENOBSERVE_USER:?Set OPENOBSERVE_USER in .env}
+      ZO_ROOT_USER_PASSWORD: ${OPENOBSERVE_PASSWORD:?Set OPENOBSERVE_PASSWORD in .env}
+      ZO_DATA_DIR: /data
+      ZO_LOCAL_MODE: "true"
+      TZ: ${TZ:-Asia/Manila}
+    volumes:
+      - openobserve_data:/data
+    networks:
+      - security
+    stop_grace_period: 30s
+
+  ollama:
+    image: ollama/ollama:${OLLAMA_TAG:-latest}
+    container_name: ollama
+    restart: unless-stopped
+    volumes:
+      - ollama_data:/root/.ollama
+    networks:
+      - security
+    # Deliberately not published to the host; internal services use ollama:11434.
+    stop_grace_period: 30s
+
+  fluent-bit:
+    image: cr.fluentbit.io/fluent/fluent-bit:${FLUENT_BIT_TAG:-3.2}
+    container_name: fluent-bit
+    restart: unless-stopped
+    depends_on:
+      - wazuh-manager
+      - openobserve
+    environment:
+      OPENOBSERVE_USER: ${OPENOBSERVE_USER:?Set OPENOBSERVE_USER in .env}
+      OPENOBSERVE_PASSWORD: ${OPENOBSERVE_PASSWORD:?Set OPENOBSERVE_PASSWORD in .env}
+      TZ: ${TZ:-Asia/Manila}
+    volumes:
+      - ./fluent-bit/fluent-bit.conf:/fluent-bit/etc/fluent-bit.conf:ro,Z
+      - wazuh_logs:/var/ossec/logs:ro
+      - ${SURICATA_LOG_DIR:-/var/log/suricata}:/var/log/suricata:ro
+      - fluent_bit_state:/fluent-bit/state
+    networks:
+      - security
+    command: ["-c", "/fluent-bit/etc/fluent-bit.conf"]
+    stop_grace_period: 30s
+
+  security-ai:
+    build:
+      context: ./security-ai
+    image: localhost/minimal-ai-security-worker:1.0
+    container_name: security-ai
+    restart: unless-stopped
+    depends_on:
+      - openobserve
+      - ollama
+    environment:
+      OPENOBSERVE_URL: http://openobserve:5080
+      OPENOBSERVE_USER: ${OPENOBSERVE_USER:?Set OPENOBSERVE_USER in .env}
+      OPENOBSERVE_PASSWORD: ${OPENOBSERVE_PASSWORD:?Set OPENOBSERVE_PASSWORD in .env}
+      OPENOBSERVE_ORG: ${OPENOBSERVE_ORG:-default}
+      OLLAMA_URL: http://ollama:11434
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen2.5:3b}
+      ANALYSIS_INTERVAL_SECONDS: ${ANALYSIS_INTERVAL_SECONDS:-300}
+      MAX_EVENTS_PER_BATCH: ${MAX_EVENTS_PER_BATCH:-30}
+      TZ: ${TZ:-Asia/Manila}
+    volumes:
+      - wazuh_logs:/var/ossec/logs:ro
+      - ${SURICATA_LOG_DIR:-/var/log/suricata}:/var/log/suricata:ro
+      - security_ai_state:/state
+    networks:
+      - security
+    stop_grace_period: 30s
+
+networks:
+  security:
+    driver: bridge
+
+volumes:
+  wazuh_api_configuration:
+  wazuh_etc:
+  wazuh_logs:
+  wazuh_queue:
+  wazuh_var_multigroups:
+  wazuh_integrations:
+  wazuh_active_response:
+  wazuh_agentless:
+  wazuh_wodles:
+  openobserve_data:
+  ollama_data:
+  fluent_bit_state:
+  security_ai_state:
