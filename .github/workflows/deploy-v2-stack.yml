@@ -6,9 +6,7 @@ on:
     branches: [v2.0]
     paths:
       - "deploy/minimal-ai-security-lab/**"
-      - "suricata/**"
-      - "scripts/install-suricata-home-security.sh"
-      - ".github/workflows/deploy-minimal-ai-security-lab.yml"
+      - ".github/workflows/deploy-v2-stack.yml"
 
 permissions:
   contents: read
@@ -38,6 +36,11 @@ jobs:
           command -v podman
           command -v podman-compose
           command -v curl
+          command -v python3
+          command -v rpm
+          command -v rpm-ostree
+          command -v systemctl
+          command -v sudo
           podman info >/dev/null
           test -r /etc/home-security-lab/minimal-ai-security-lab.env
       - name: Ensure Suricata is installed with live application
@@ -63,7 +66,7 @@ jobs:
           set -euo pipefail
           env_value() {
             local key="$1" fallback="$2" value
-            value="$(sed -n "s/^\${key}=//p" .env | tail -n 1)"
+            value="$(awk -F= -v key="$key" '$1 == key { sub(/^[^=]*=/, ""); value = $0 } END { print value }' .env)"
             printf '%s' "${value:-$fallback}"
           }
           podman pull "wazuh/wazuh-manager:$(env_value WAZUH_VERSION 4.14.8)"
@@ -80,7 +83,7 @@ jobs:
       - name: Pull Ollama model
         run: |
           set -euo pipefail
-          model="$(sed -n 's/^OLLAMA_MODEL=//p' .env | tail -n 1)"
+          model="$(awk -F= '$1 == "OLLAMA_MODEL" { sub(/^[^=]*=/, ""); value = $0 } END { print value }' .env)"
           podman exec ollama ollama pull "${model:-qwen2.5:3b}"
       - name: Health check containers and native Suricata
         timeout-minutes: 5
@@ -114,7 +117,7 @@ jobs:
           podman exec wazuh-manager /var/ossec/bin/wazuh-control status
 
           # Check OpenObserve's HTTP endpoint.
-          openobserve_port="$(sed -n 's/^OPENOBSERVE_PORT=//p' .env | tail -n 1)"
+          openobserve_port="$(awk -F= '$1 == "OPENOBSERVE_PORT" { sub(/^[^=]*=/, ""); value = $0 } END { print value }' .env)"
           openobserve_port="${openobserve_port:-5080}"
           curl --fail --silent --show-error --max-time 15 "http://127.0.0.1:${openobserve_port}/healthz" >/dev/null
 
