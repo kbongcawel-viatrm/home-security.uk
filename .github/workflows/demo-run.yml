@@ -1,11 +1,13 @@
 name: Test deploy on Ubuntu
 
 on:
-  workflow_dispatch:
+  push:
+    branches:
+      - demo-run
     paths:
       - "v2.home-security.uk/**"
       - ".github/workflows/deploy-v2-stack.yml"
-
+      
 permissions:
   contents: read
 
@@ -15,7 +17,7 @@ concurrency:
 
 jobs:
   deploy:
-    if: github.ref == 'refs/heads/v2.0'
+    if: github.ref == 'refs/heads/demo-run'
     runs-on: ubuntu-latest
     timeout-minutes: 45
     defaults:
