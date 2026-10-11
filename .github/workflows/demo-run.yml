@@ -28,6 +28,16 @@ jobs:
         with:
           ref: v2.0
           clean: true
+      - name: Install dependency 
+        run: |
+          set -euo pipefail
+          sudo apt install -y \
+          podman \
+          podman-compose \
+          curl \
+          python3 \
+          suricata 
+ 
       - name: Check runtime prerequisites
         run: |
           set -euo pipefail
