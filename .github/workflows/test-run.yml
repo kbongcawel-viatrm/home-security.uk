@@ -1,0 +1,159 @@
+name: Test Run
+
+on:
+  workflow_dispatch:
+    paths:
+      - "v2.home-security.uk/**"
+      - ".github/workflows/deploy-v2-stack.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: v2.home-security.uk-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    if: github.ref == 'refs/heads/v2.0'
+    runs-on: [ubuntu-latest]
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: bash
+        working-directory: v2.home-security.uk
+    steps:
+      - name: Checkout v2.0
+        uses: actions/checkout@v4
+        with:
+          ref: v2.0
+          clean: true
+      - name: Check runtime prerequisites
+        run: |
+          set -euo pipefail
+          command -v podman
+          command -v podman-compose
+          command -v curl
+          command -v python3
+          command -v rpm
+          command -v rpm-ostree
+          command -v systemctl
+          command -v sudo
+          podman info >/dev/null
+          test -r /etc/v2.home-security.uk/minimal-ai-security-lab.env
+      - name: Ensure Suricata is installed with live application
+        working-directory: .
+        run: |
+          set -euo pipefail
+          if ! rpm -q suricata >/dev/null 2>&1; then
+            echo "Suricata is not installed; attempting rpm-ostree live application."
+            if ! sudo -n rpm-ostree install --apply-live suricata; then
+              echo "ERROR: Live installation failed or is unsupported. No reboot attempted; install Suricata in a maintenance window and rerun." >&2
+              exit 1
+            fi
+          fi
+          rpm -q suricata >/dev/null
+          command -v suricata >/dev/null
+          systemctl cat suricata.service >/dev/null
+      - name: Load host-managed environment
+        run: install -m 600 /etc/v2.home-security.uk/minimal-ai-security-lab.env .env
+      - name: Validate Compose configuration
+        run: podman-compose -f compose.yaml config >/dev/null
+      - name: Pull container images
+        run: |
+          set -euo pipefail
+          env_value() {
+            local key="$1" fallback="$2" value
+            value="$(awk -F= -v key="$key" '$1 == key { sub(/^[^=]*=/, ""); value = $0 } END { print value }' .env)"
+            printf '%s' "${value:-$fallback}"
+          }
+          podman pull "wazuh/wazuh-manager:$(env_value WAZUH_VERSION 4.14.8)"
+          podman pull "public.ecr.aws/zinclabs/openobserve:$(env_value OPENOBSERVE_TAG latest)"
+          podman pull "ollama/ollama:$(env_value OLLAMA_TAG latest)"
+          podman pull "cr.fluentbit.io/fluent/fluent-bit:$(env_value FLUENT_BIT_TAG 3.2)"
+      - name: Build local AI worker
+        run: podman-compose -f compose.yaml build security-ai
+      - name: Install, validate, enable, and start host Suricata
+        working-directory: .
+        run: sudo -n bash v2.home-security.uk/scripts/install-suricata-home-security.sh
+      - name: Deploy containers
+        run: podman-compose -f compose.yaml up -d --build
+      - name: Pull Ollama model
+        run: |
+          set -euo pipefail
+          model="$(awk -F= '$1 == "OLLAMA_MODEL" { sub(/^[^=]*=/, ""); value = $0 } END { print value }' .env)"
+          podman exec ollama ollama pull "${model:-qwen2.5:3b}"
+      - name: Health check containers and native Suricata
+        timeout-minutes: 5
+        run: |
+          set -euo pipefail
+
+          # Fail the deployment if any required container is not running.
+          required_containers=(wazuh-manager openobserve ollama fluent-bit security-ai)
+          for name in "${required_containers[@]}"; do
+            if ! podman container exists "$name"; then
+              echo "::error::Required container is missing: $name"
+              podman-compose -f compose.yaml ps || true
+              exit 1
+            fi
+            state="$(podman inspect --format '{{.State.Status}}' "$name")"
+            if [[ "$state" != "running" ]]; then
+              echo "::error::Container $name is $state, expected running."
+              podman logs --tail 100 "$name" || true
+              exit 1
+            fi
+            health="$(podman inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}not-configured{{end}}' "$name" 2>/dev/null || echo unknown)"
+            echo "$name: state=$state health=$health"
+            if [[ "$health" == "unhealthy" ]]; then
+              echo "::error::Container $name reports unhealthy."
+              podman logs --tail 100 "$name" || true
+              exit 1
+            fi
+          done
+
+          # Verify the Wazuh manager's internal daemons, not just its container.
+          podman exec wazuh-manager /var/ossec/bin/wazuh-control status
+
+          # Check OpenObserve's HTTP endpoint.
+          openobserve_port="$(awk -F= '$1 == "OPENOBSERVE_PORT" { sub(/^[^=]*=/, ""); value = $0 } END { print value }' .env)"
+          openobserve_port="${openobserve_port:-5080}"
+          curl --fail --silent --show-error --max-time 15 "http://127.0.0.1:${openobserve_port}/healthz" >/dev/null
+
+          # Verify Ollama responds and the configured model is available.
+          podman exec ollama ollama list
+          model="$(sed -n 's/^OLLAMA_MODEL=//p' .env | tail -n 1)"
+          model="${model:-qwen2.5:3b}"
+          podman exec ollama ollama show "$model" >/dev/null
+
+          # Verify Fluent Bit and the AI worker are alive and have not exited.
+          podman top fluent-bit
+          podman logs --tail 100 security-ai | grep -F "security-ai worker started" >/dev/null || {
+            echo "::error::AI worker startup marker not found in recent logs."
+            podman logs --tail 100 security-ai || true
+            exit 1
+          }
+
+          # Check native host Suricata systemd state and configuration.
+          systemctl is-enabled --quiet suricata.service
+          systemctl is-active --quiet suricata.service
+          sudo -n suricata -T -c /etc/suricata/suricata.yaml
+          test -r /var/log/suricata/eve.json
+          python3 -c 'import json,sys; p="/var/log/suricata/eve.json"; lines=[x for x in open(p, encoding="utf-8") if x.strip()]; json.loads(lines[-1]) if lines else sys.exit("EVE log is empty")'
+          echo "All required containers, Wazuh daemons, OpenObserve, Ollama, Fluent Bit, AI worker, and native Suricata checks passed."
+          podman-compose -f compose.yaml ps
+
+          # Print diagnostic logs on later workflow failure.
+      - name: Collect diagnostics on failure
+        if: failure()
+        run: |
+          set +e
+          podman-compose -f compose.yaml ps
+          for name in wazuh-manager openobserve ollama fluent-bit security-ai; do
+            echo "===== $name ====="
+            podman logs --tail 100 "$name"
+          done
+          systemctl --no-pager --full status suricata.service
+          sudo -n journalctl -u suricata.service -n 100 --no-pager
+      - name: Remove temporary environment file
+        if: always()
+        run: rm -f .env
