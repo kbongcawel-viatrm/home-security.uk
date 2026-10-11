@@ -1,4 +1,4 @@
-name: Deploy v2.home-security.uk
+name: Test Run
 
 on:
   workflow_dispatch:
