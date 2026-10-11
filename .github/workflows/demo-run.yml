@@ -37,18 +37,7 @@ jobs:
           curl \
           python3 \
           suricata 
- 
-      - name: Check runtime prerequisites
-        run: |
-          set -euo pipefail
-          command -v podman
-          command -v podman-compose
-          command -v curl
-          command -v python3
-          command -v rpm
-          command -v sudo
-          podman info >/dev/null
-          test -r /etc/v2.home-security.uk/minimal-ai-security-lab.env
+        
       - name: Ensure Suricata is installed with live application
         working-directory: .
         run: |
