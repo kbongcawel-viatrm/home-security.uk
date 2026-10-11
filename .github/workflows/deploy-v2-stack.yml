@@ -18,7 +18,7 @@ concurrency:
 jobs:
   deploy:
     if: github.ref == 'refs/heads/v2.0'
-    runs-on: [self-hosted, fedora-secureblue]
+    runs-on: [self-hosted, fedora-secureblue-host]        ## fedora-secureblue: toolbox environment | fedora-secureblue-host: host environment
     timeout-minutes: 45
     defaults:
       run:
