@@ -64,6 +64,7 @@ services:
     environment:
       OPENOBSERVE_USER: ${OPENOBSERVE_USER:?Set OPENOBSERVE_USER in .env}
       OPENOBSERVE_PASSWORD: ${OPENOBSERVE_PASSWORD:?Set OPENOBSERVE_PASSWORD in .env}
+      OPENOBSERVE_ORG: ${OPENOBSERVE_ORG:-default}
       TZ: ${TZ:-Asia/Manila}
     volumes:
       - ./fluent-bit/fluent-bit.conf:/fluent-bit/etc/fluent-bit.conf:ro,Z
