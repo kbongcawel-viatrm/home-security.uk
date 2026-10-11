@@ -2,25 +2,12 @@ todo.md
 *.sw*
 .env
 .env.vault
-The Hands/backups/
-The Hands/reports/data/container-vulnerabilities/
-The Hands/reports/data/log-assessments/*/
-!The Hands/reports/data/log-assessments/latest/
-!The Hands/reports/data/log-assessments/latest/assessment.json
-!The Hands/reports/data/log-assessments/latest/assessment.md
 *.local
 __pycache__/
 *.pyc
-The Sword/Suricata/rules/suricata.rules
-The Sword/Suricata/rules/*.config
-The Sword/Suricata/rules/*.backup
-The Sword/Suricata/rules/.cache/
 downloads/
 downloads/*
 wsl/
 wsl/*
 client.keys
 .buildx-cache/
-/scripts/Cline_0.0.45_x86_64.rpm
-/scripts/*.rpm
-/scripts/Cline_*.rpm
