@@ -1,4 +1,4 @@
-name: Deploy v2.home-security.uk
+name: Test deploy on Ubuntu
 
 on:
   workflow_dispatch:
@@ -16,7 +16,7 @@ concurrency:
 jobs:
   deploy:
     if: github.ref == 'refs/heads/v2.0'
-    runs-on: [self-hosted, fedora-secureblue]    ## fedora-secureblue: toolbox runtime | fedora-secureblue-host: host runtime
+    runs-on: [ubuntu-latest]
     timeout-minutes: 45
     defaults:
       run:
