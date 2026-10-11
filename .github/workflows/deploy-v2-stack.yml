@@ -2,8 +2,6 @@ name: Deploy v2.home-security.uk
 
 on:
   workflow_dispatch:
-  push:
-    branches: [v2.0]
     paths:
       - "v2.home-security.uk/**"
       - ".github/workflows/deploy-v2-stack.yml"
