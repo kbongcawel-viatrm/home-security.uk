@@ -1,8 +1,0 @@
-# Home Security Lab local rules.
-# SIDs 9900001-9900099 are reserved for this repository's local rules.
-# These are alert-only IDS signatures; they do not drop traffic.
-
-alert tcp $EXTERNAL_NET any -> $HOME_NET 23 (msg:"HOMESEC inbound Telnet connection attempt"; flags:S; flow:stateless; sid:9900001; rev:1;)
-alert tcp $EXTERNAL_NET any -> $HOME_NET 445 (msg:"HOMESEC inbound SMB connection attempt"; flags:S; flow:stateless; sid:9900002; rev:1;)
-alert tcp $EXTERNAL_NET any -> $HOME_NET 3389 (msg:"HOMESEC inbound RDP connection attempt"; flags:S; flow:stateless; sid:9900003; rev:1;)
-alert tcp $HOME_NET any -> $EXTERNAL_NET 23 (msg:"HOMESEC outbound Telnet connection attempt"; flags:S; flow:stateless; sid:9900004; rev:1;)

@@ -20,7 +20,7 @@ concurrency:
 jobs:
   deploy:
     if: github.ref == 'refs/heads/v2.0'
-    runs-on: [self-hosted, linux, x64]
+    runs-on: [self-hosted, fedora-secureblue]
     timeout-minutes: 45
     defaults:
       run:
